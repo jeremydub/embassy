@@ -7,12 +7,15 @@
 
 /// Bluetooth Low Energy Radio driver.
 pub mod ble;
-#[cfg(any(
-    feature = "nrf52811",
-    feature = "nrf52820",
-    feature = "nrf52833",
-    feature = "nrf52840",
-    feature = "_nrf5340-net"
+#[cfg(all(
+    any(
+        feature = "nrf52811",
+        feature = "nrf52820",
+        feature = "nrf52833",
+        feature = "nrf52840",
+        feature = "_nrf5340-net"
+    ),
+    feature = "ieee802154"
 ))]
 /// IEEE 802.15.4
 pub mod ieee802154;
@@ -40,6 +43,15 @@ pub enum Error {
     ChannelInUse,
     /// CRC check failed
     CrcFailed(u16),
+}
+
+/// Frame parsing error
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[non_exhaustive]
+pub enum FrameParsingError {
+    /// Buffer was too long.
+    BufferTooLong,
 }
 
 /// Interrupt handler

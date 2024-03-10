@@ -1,0 +1,19 @@
+[package]
+name = "embassy-ieee802154"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Embassy binding for IEEE802.15.4 MAC layer implementations"
+keywords = ["embedded", "async", "dot15d4"]
+categories = ["embedded", "ieee802.15.4", "MAC layer", "no-std", "asynchronous"]
+repository = "https://github.com/embassy-rs/embassy"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+dot15d4 = { git = "https://github.com/SamClercky/dot15d4.git", branch = "csma-ca", default-features = false }
+defmt = { version = "0.3", optional = true }
+
+[features]
+default = ["defmt"]
+defmt = ["dep:defmt", "dot15d4/defmt"]

@@ -23,7 +23,14 @@ flavors = [
 ]
 
 [package.metadata.docs.rs]
-features = ["nrf52840", "time", "defmt", "unstable-pac", "gpiote", "time-driver-rtc1"]
+features = [
+    "nrf52840",
+    "time",
+    "defmt",
+    "unstable-pac",
+    "gpiote",
+    "time-driver-rtc1",
+]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
@@ -34,8 +41,18 @@ rt = ["nrf-pac/rt"]
 ## Enable features requiring `embassy-time`
 time = ["dep:embassy-time"]
 
+## Enable IEEE 802.15.4 Radio implementation
+# ieee802154 = ["dep:embassy-ieee802154"]
+
 ## Enable defmt
-defmt = ["dep:defmt", "embassy-hal-internal/defmt", "embassy-sync/defmt", "embassy-usb-driver/defmt", "embassy-embedded-hal/defmt"]
+defmt = [
+    "dep:defmt",
+    "embassy-hal-internal/defmt",
+    "embassy-sync/defmt",
+    "embassy-usb-driver/defmt",
+    "embassy-embedded-hal/defmt",
+    "embassy-ieee802154/defmt",
+]
 
 ## Reexport the PAC for the currently enabled chip at `embassy_nrf::pac` (unstable)
 unstable-pac = []
@@ -48,6 +65,9 @@ gpiote = []
 
 ## Use RTC1 as the time driver for `embassy-time`, with a tick rate of 32.768khz
 time-driver-rtc1 = ["_time-driver"]
+
+## Enable IEEE 802.15.4 MAC compatible implementation
+ieee802154 = ["dep:embassy-ieee802154"]
 
 ## Allow using the NFC pins as regular GPIO pins (P0_09/P0_10 on nRF52, P0_02/P0_03 on nRF53)
 nfc-pins-as-gpio = []
@@ -134,6 +154,7 @@ _gpio-p2 = []
 _nrf52832_anomaly_109 = []
 
 [dependencies]
+embassy-ieee802154 = { version = "0.1.0", path = "../embassy-ieee802154", default-features = false, optional = true }
 embassy-time-driver = { version = "0.2", path = "../embassy-time-driver", optional = true }
 embassy-time-queue-utils = { version = "0.1", path = "../embassy-time-queue-utils", optional = true }
 embassy-time = { version = "0.4.0", path = "../embassy-time", optional = true }
@@ -142,7 +163,9 @@ embassy-hal-internal = {version = "0.2.0", path = "../embassy-hal-internal", fea
 embassy-embedded-hal = {version = "0.2.0", path = "../embassy-embedded-hal" }
 embassy-usb-driver = {version = "0.1.0", path = "../embassy-usb-driver" }
 
-embedded-hal-02 = { package = "embedded-hal", version = "0.2.6", features = ["unproven"] }
+embedded-hal-02 = { package = "embedded-hal", version = "0.2.6", features = [
+    "unproven",
+] }
 embedded-hal-1 = { package = "embedded-hal", version = "1.0" }
 embedded-hal-async = { version = "1.0" }
 embedded-io = { version = "0.6.0" }
