@@ -5,6 +5,7 @@ use core::task::Poll;
 
 use embassy_hal_internal::drop::OnDrop;
 use embassy_hal_internal::{into_ref, PeripheralRef};
+use embassy_ieee802154::config::{Channel, RxConfig, TxConfig};
 
 use super::{state, Error, Instance, InterruptHandler, RadioState, TxPower};
 use crate::interrupt::typelevel::Interrupt;
@@ -84,7 +85,7 @@ impl<'d, T: Instance> Radio<'d, T> {
             r.pcnf1.write(|w| {
                 // Maximum packet length
                 w.maxlen()
-                    .bits(Packet::MAX_PSDU_LEN)
+                    .bits(NRFFrame::<[u8; 128]>::MAX_PSDU_LEN)
                     // Zero static length
                     .statlen()
                     .bits(0)
@@ -267,7 +268,7 @@ impl<'d, T: Instance> Radio<'d, T> {
     }
 
     /// Prepare radio for receiving a packet
-    fn receive_start(&mut self, packet: &mut Packet) {
+    fn receive_start(&mut self, packet: &mut [u8]) {
         // NOTE we do NOT check the address of `packet` because the mutable reference ensures it's
         // allocated in RAM
         let r = T::regs();
@@ -282,7 +283,7 @@ impl<'d, T: Instance> Radio<'d, T> {
         r.shorts.write(|w| w.rxready_start().enabled());
 
         // set up RX buffer
-        self.set_buffer(packet.buffer.as_mut());
+        self.set_buffer(packet);
 
         // start transfer
         dma_start_fence();
@@ -314,8 +315,10 @@ impl<'d, T: Instance> Radio<'d, T> {
     ///
     /// This methods returns the `Ok` variant if the CRC included the packet was successfully
     /// validated by the hardware; otherwise it returns the `Err` variant. In either case, `packet`
-    /// will be updated with the received packet's data
-    pub async fn receive(&mut self, packet: &mut Packet) -> Result<(), Error> {
+    /// will be updated with the received packet's data.
+    ///
+    /// Contrary to the `receive` method on the `Radio` trait, this method is cancel safe.
+    pub async fn receive(&mut self, packet: &mut [u8]) -> Result<(), Error> {
         let s = T::state();
         let r = T::regs();
 
@@ -362,7 +365,7 @@ impl<'d, T: Instance> Radio<'d, T> {
     /// ensure the `packet` buffer is allocated in RAM, which is required by the RADIO peripheral
     // NOTE we do NOT check the address of `packet` because the mutable reference ensures it's
     // allocated in RAM
-    pub async fn try_send(&mut self, packet: &mut Packet) -> Result<(), Error> {
+    pub async fn try_send(&mut self, packet: &mut [u8]) -> Result<(), Error> {
         let s = T::state();
         let r = T::regs();
 
@@ -401,7 +404,7 @@ impl<'d, T: Instance> Radio<'d, T> {
         });
 
         // Set transmission buffer
-        self.set_buffer(packet.buffer.as_mut());
+        self.set_buffer(packet);
 
         // the DMA transfer will start at some point after the following write operation so
         // we place the compiler fence here
@@ -443,6 +446,274 @@ impl<'d, T: Instance> Radio<'d, T> {
     }
 }
 
+impl<'d, T: Instance> embassy_ieee802154::radio::Radio for Radio<'d, T> {
+    type RadioFrame<B: AsRef<[u8]>> = NRFFrame<B>;
+    type RxToken<'a> = NRFRxToken<'a>;
+    type TxToken<'b> = NRFTxToken<'b>;
+
+    async fn disable(&mut self) {
+        self.disable()
+    }
+
+    async fn enable(&mut self) {}
+
+    async unsafe fn prepare_receive(&mut self, cfg: &RxConfig, bytes: &mut [u8; 128]) {
+        self.receive_start(bytes);
+    }
+
+    async fn receive(&mut self) -> bool {
+        let s = T::state();
+        let r = T::regs();
+
+        self.clear_all_interrupts();
+        // wait until we have received something
+        core::future::poll_fn(|cx| {
+            s.event_waker.register(cx.waker());
+
+            if r.events_phyend.read().events_phyend().bit_is_set() {
+                r.events_phyend.reset();
+                trace!("RX done poll");
+                return Poll::Ready(());
+            } else {
+                r.intenset.write(|w| w.phyend().set());
+            };
+
+            Poll::Pending
+        })
+        .await;
+
+        dma_end_fence();
+        // dropper.defuse();
+        // let crc = r.rxcrc.read().rxcrc().bits() as u16;
+
+        // True if successful
+        r.crcstatus.read().crcstatus().bit_is_set()
+    }
+
+    async unsafe fn prepare_transmit(&mut self, cfg: &TxConfig, bytes: &mut [u8]) {
+        let channel = match cfg.channel {
+            Channel::_11 => 11,
+            Channel::_12 => 12,
+            Channel::_13 => 13,
+            Channel::_14 => 14,
+            Channel::_15 => 15,
+            Channel::_16 => 16,
+            Channel::_17 => 17,
+            Channel::_18 => 18,
+            Channel::_19 => 19,
+            Channel::_20 => 20,
+            Channel::_21 => 21,
+            Channel::_22 => 22,
+            Channel::_23 => 23,
+            Channel::_24 => 24,
+            Channel::_25 => 25,
+            Channel::_26 => 26,
+        };
+        self.set_channel(channel);
+
+        let s = T::state();
+        let r = T::regs();
+
+        // enable radio to perform cca
+        self.receive_prepare();
+        if cfg.cca {
+            // Configure shortcuts
+            //
+            // The radio goes through following states when sending a 802.15.4 packet
+            //
+            // enable RX → ramp up RX → clear channel assessment (CCA) → CCA result
+            // CCA idle → enable TX → start TX → TX → end (PHYEND) → disabled
+            //
+            // CCA might end up in the event CCABUSY in which there will be no transmission
+            r.shorts.write(|w| {
+                w.rxready_ccastart()
+                    .enabled()
+                    .ccaidle_txen()
+                    .enabled()
+                    .txready_start()
+                    .enabled()
+                    .ccabusy_disable()
+                    .enabled()
+                    .phyend_disable()
+                    .enabled()
+            });
+        } else {
+            r.shorts
+                .write(|w| w.txready_start().enabled().phyend_disable().enabled());
+        }
+
+        // Set transmission buffer
+        //self.set_buffer(packet);
+
+        // the DMA transfer will start at some point after the following write operation so
+        // we place the compiler fence here
+        dma_start_fence();
+        // start CCA. In case the channel is clear, the data at packetptr will be sent automatically
+
+        match (self.state(), cfg.cca) {
+            // Re-start receiver (CCA)
+            (RadioState::RX_IDLE, true) => r.tasks_ccastart.write(|w| w.tasks_ccastart().set_bit()),
+            // Enable receiver (CCA)
+            (_, true) => r.tasks_rxen.write(|w| w.tasks_rxen().set_bit()),
+            // Re-start transmitter (CCA)
+            (RadioState::TX_IDLE, false) => r.tasks_start.write(|w| w.tasks_start().set_bit()),
+            // Enable transmitter (CCA)
+            (_, false) => r.tasks_txen.write(|w| w.tasks_txen().set_bit()),
+        }
+    }
+
+    async fn transmit(&mut self) -> bool {
+        let s = T::state();
+        let r = T::regs();
+
+        self.clear_all_interrupts();
+        core::future::poll_fn(|cx| {
+            s.event_waker.register(cx.waker());
+
+            if r.events_phyend.read().events_phyend().bit_is_set() {
+                r.events_phyend.reset();
+                r.events_ccabusy.reset();
+                trace!("TX done poll");
+                return Poll::Ready(true); // Success
+            } else if r.events_ccabusy.read().events_ccabusy().bit_is_set() {
+                r.events_ccabusy.reset();
+                trace!("TX no CCA");
+                return Poll::Ready(false); // CCA failed
+            }
+
+            r.intenset.write(|w| w.phyend().set().ccabusy().set());
+
+            Poll::Pending
+        })
+        .await
+    }
+
+    fn cancel_current_opperation(&mut self) {
+        let s = T::state();
+        let r = T::regs();
+
+        match self.state() {
+            RadioState::DISABLED
+            | RadioState::RX_DISABLE
+            | RadioState::TX_DISABLE
+            | RadioState::RX_IDLE
+            | RadioState::TX_IDLE => (),
+            RadioState::TX | RadioState::TX_RU | RadioState::RX | RadioState::RX_RU => {
+                let radio = T::regs();
+                radio.tasks_stop.write(|w| w.tasks_stop().set_bit())
+            }
+        }
+    }
+
+    fn ieee802154_address(&self) -> [u8; 8] {
+        let ficr = unsafe { crate::pac::Peripherals::steal().FICR };
+        let [id1, id2] = &ficr.deviceid; // FIXME: Should this be modified to DEVICEADDR (only 48bit)
+        let [id1, id2] = [id1.read().bits(), id2.read().bits()];
+        [
+            ((id1 & 0xf000u32) >> 24u32) as u8,
+            ((id1 & 0x0f00u32) >> 16u32) as u8,
+            ((id1 & 0x00f0u32) >> 8u32) as u8,
+            ((id1 & 0x000fu32) >> 0u32) as u8,
+            ((id2 & 0xf000u32) >> 24u32) as u8,
+            ((id2 & 0x0f00u32) >> 16u32) as u8,
+            ((id2 & 0x00f0u32) >> 8u32) as u8,
+            ((id2 & 0x000fu32) >> 0u32) as u8,
+        ]
+    }
+}
+
+// /// An IEEE 802.15.4 packet
+// ///
+// /// This `Packet` is a PHY layer packet. It's made up of the physical header (PHR) and the PSDU
+// /// (PHY service data unit). The PSDU of this `Packet` will always include the MAC level CRC, AKA
+// /// the FCS (Frame Control Sequence) -- the CRC is fully computed in hardware and automatically
+// /// appended on transmission and verified on reception.
+// ///
+// /// The API lets users modify the usable part (not the CRC) of the PSDU via the `deref` and
+// /// `copy_from_slice` methods. These methods will automatically update the PHR.
+// ///
+// /// See figure 119 in the Product Specification of the nRF52840 for more details
+// pub struct Packet {
+//     buffer: [u8; Self::SIZE],
+// }
+
+// // See figure 124 in nRF52840-PS
+// impl Packet {
+//     // for indexing purposes
+//     const PHY_HDR: usize = 0;
+//     const DATA: core::ops::RangeFrom<usize> = 1..;
+
+//     /// Maximum amount of usable payload (CRC excluded) a single packet can contain, in bytes
+//     pub const CAPACITY: u8 = 125;
+//     const CRC: u8 = 2; // size of the CRC, which is *never* copied to / from RAM
+//     const MAX_PSDU_LEN: u8 = Self::CAPACITY + Self::CRC;
+//     const SIZE: usize = 1 /* PHR */ + Self::MAX_PSDU_LEN as usize;
+
+//     /// Returns an empty packet (length = 0)
+//     pub fn new() -> Self {
+//         let mut packet = Self {
+//             buffer: [0; Self::SIZE],
+//         };
+//         packet.set_len(0);
+//         packet
+//     }
+
+//     /// Fills the packet payload with given `src` data
+//     ///
+//     /// # Panics
+//     ///
+//     /// This function panics if `src` is larger than `Self::CAPACITY`
+//     pub fn copy_from_slice(&mut self, src: &[u8]) {
+//         assert!(src.len() <= Self::CAPACITY as usize);
+//         let len = src.len() as u8;
+//         self.buffer[Self::DATA][..len as usize].copy_from_slice(&src[..len.into()]);
+//         self.set_len(len);
+//     }
+
+//     /// Returns the size of this packet's payload
+//     pub fn len(&self) -> u8 {
+//         self.buffer[Self::PHY_HDR] - Self::CRC
+//     }
+
+//     /// Changes the size of the packet's payload
+//     ///
+//     /// # Panics
+//     ///
+//     /// This function panics if `len` is larger than `Self::CAPACITY`
+//     pub fn set_len(&mut self, len: u8) {
+//         assert!(len <= Self::CAPACITY);
+//         self.buffer[Self::PHY_HDR] = len + Self::CRC;
+//     }
+
+//     /// Returns the LQI (Link Quality Indicator) of the received packet
+//     ///
+//     /// Note that the LQI is stored in the `Packet`'s internal buffer by the hardware so the value
+//     /// returned by this method is only valid after a `Radio.recv` operation. Operations that
+//     /// modify the `Packet`, like `copy_from_slice` or `set_len`+`deref_mut`, will overwrite the
+//     /// stored LQI value.
+//     ///
+//     /// Also note that the hardware will *not* compute a LQI for packets smaller than 3 bytes so
+//     /// this method will return an invalid value for those packets.
+//     pub fn lqi(&self) -> u8 {
+//         self.buffer[1 /* PHY_HDR */ + self.len() as usize /* data */]
+//     }
+// }
+
+// impl core::ops::Deref for Packet {
+//     type Target = [u8];
+
+//     fn deref(&self) -> &[u8] {
+//         &self.buffer[Self::DATA][..self.len() as usize]
+//     }
+// }
+
+// impl core::ops::DerefMut for Packet {
+//     fn deref_mut(&mut self) -> &mut [u8] {
+//         let len = self.len();
+//         &mut self.buffer[Self::DATA][..len as usize]
+//     }
+// }
+
 /// An IEEE 802.15.4 packet
 ///
 /// This `Packet` is a PHY layer packet. It's made up of the physical header (PHR) and the PSDU
@@ -450,16 +721,12 @@ impl<'d, T: Instance> Radio<'d, T> {
 /// the FCS (Frame Control Sequence) -- the CRC is fully computed in hardware and automatically
 /// appended on transmission and verified on reception.
 ///
-/// The API lets users modify the usable part (not the CRC) of the PSDU via the `deref` and
-/// `copy_from_slice` methods. These methods will automatically update the PHR.
-///
 /// See figure 119 in the Product Specification of the nRF52840 for more details
-pub struct Packet {
-    buffer: [u8; Self::SIZE],
+pub struct NRFFrame<T> {
+    buffer: T,
 }
 
-// See figure 124 in nRF52840-PS
-impl Packet {
+impl<T: AsRef<[u8]>> NRFFrame<T> {
     // for indexing purposes
     const PHY_HDR: usize = 0;
     const DATA: core::ops::RangeFrom<usize> = 1..;
@@ -470,68 +737,110 @@ impl Packet {
     const MAX_PSDU_LEN: u8 = Self::CAPACITY + Self::CRC;
     const SIZE: usize = 1 /* PHR */ + Self::MAX_PSDU_LEN as usize;
 
-    /// Returns an empty packet (length = 0)
-    pub fn new() -> Self {
-        let mut packet = Self {
-            buffer: [0; Self::SIZE],
-        };
-        packet.set_len(0);
-        packet
-    }
-
-    /// Fills the packet payload with given `src` data
-    ///
-    /// # Panics
-    ///
-    /// This function panics if `src` is larger than `Self::CAPACITY`
-    pub fn copy_from_slice(&mut self, src: &[u8]) {
-        assert!(src.len() <= Self::CAPACITY as usize);
-        let len = src.len() as u8;
-        self.buffer[Self::DATA][..len as usize].copy_from_slice(&src[..len.into()]);
-        self.set_len(len);
-    }
-
-    /// Returns the size of this packet's payload
+    /// The length as found in the frame
     pub fn len(&self) -> u8 {
-        self.buffer[Self::PHY_HDR] - Self::CRC
+        self.buffer.as_ref()[Self::PHY_HDR] - Self::CRC
     }
 
-    /// Changes the size of the packet's payload
-    ///
-    /// # Panics
-    ///
-    /// This function panics if `len` is larger than `Self::CAPACITY`
+    /// Whether or not the frame is empty
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// The LQI, if available
+    pub fn lqi(&self) -> Option<u8> {
+        if self.len() < 3 {
+            None
+        } else {
+            Some(self.buffer.as_ref()[1 /* PHY_HDR */ + self.len() as usize /* data */])
+        }
+    }
+}
+
+impl<T: AsRef<[u8]> + AsMut<[u8]>> NRFFrame<T> {
+    /// Set the length of the packet
     pub fn set_len(&mut self, len: u8) {
         assert!(len <= Self::CAPACITY);
-        self.buffer[Self::PHY_HDR] = len + Self::CRC;
+        self.buffer.as_mut()[Self::PHY_HDR] = len;
     }
 
-    /// Returns the LQI (Link Quality Indicator) of the received packet
-    ///
-    /// Note that the LQI is stored in the `Packet`'s internal buffer by the hardware so the value
-    /// returned by this method is only valid after a `Radio.recv` operation. Operations that
-    /// modify the `Packet`, like `copy_from_slice` or `set_len`+`deref_mut`, will overwrite the
-    /// stored LQI value.
-    ///
-    /// Also note that the hardware will *not* compute a LQI for packets smaller than 3 bytes so
-    /// this method will return an invalid value for those packets.
-    pub fn lqi(&self) -> u8 {
-        self.buffer[1 /* PHY_HDR */ + self.len() as usize /* data */]
+    /// Set the LQI of the frame, make sure that the length needs to be at least 3 bytes long
+    pub fn set_lqi(&mut self, lqi: Option<u8>) {
+        let len = self.len() as usize /* data */;
+        self.buffer.as_mut()[1 /* PHY_HDR */ + len] = lqi.unwrap_or(0);
     }
 }
 
-impl core::ops::Deref for Packet {
-    type Target = [u8];
+impl<T: AsRef<[u8]>> embassy_ieee802154::radio::RadioFrame<T> for NRFFrame<T> {
+    type Error = super::FrameParsingError;
 
-    fn deref(&self) -> &[u8] {
-        &self.buffer[Self::DATA][..self.len() as usize]
+    fn new_unchecked(buffer: T) -> Self {
+        Self { buffer }
+    }
+
+    fn new_checked(buffer: T) -> Result<Self, Self::Error> {
+        let len = buffer.as_ref()[Self::PHY_HDR];
+        if len > Self::CAPACITY {
+            return Err(Self::Error::BufferTooLong);
+        }
+
+        Ok(Self::new_unchecked(buffer))
+    }
+
+    fn data(&self) -> &[u8] {
+        &self.buffer.as_ref()[Self::DATA][..self.len() as usize]
     }
 }
 
-impl core::ops::DerefMut for Packet {
-    fn deref_mut(&mut self) -> &mut [u8] {
-        let len = self.len();
-        &mut self.buffer[Self::DATA][..len as usize]
+impl<T: AsRef<[u8]> + AsMut<[u8]>> embassy_ieee802154::radio::RadioFrameMut<T> for NRFFrame<T> {
+    fn data_mut(&mut self) -> &mut [u8] {
+        let len = self.len() as usize;
+        &mut self.buffer.as_mut()[Self::DATA][..len]
+    }
+}
+
+/// TxToken implementation for the nRF
+pub struct NRFTxToken<'a> {
+    buffer: &'a mut [u8],
+}
+
+impl embassy_ieee802154::radio::TxToken for NRFTxToken<'_> {
+    fn consume<F, R>(self, len: usize, f: F) -> R
+    where
+        F: FnOnce(&mut [u8]) -> R,
+    {
+        use embassy_ieee802154::radio::*;
+        let mut frame = NRFFrame::new_unchecked(self.buffer);
+        frame.set_len(len as u8);
+        f(frame.data_mut())
+    }
+}
+
+impl<'a> From<&'a mut [u8]> for NRFTxToken<'a> {
+    fn from(value: &'a mut [u8]) -> Self {
+        Self { buffer: value }
+    }
+}
+
+/// RxToken implementation for the nRF
+pub struct NRFRxToken<'a> {
+    buffer: &'a mut [u8],
+}
+
+impl embassy_ieee802154::radio::RxToken for NRFRxToken<'_> {
+    fn consume<F, R>(self, f: F) -> R
+    where
+        F: FnOnce(&mut [u8]) -> R,
+    {
+        use embassy_ieee802154::radio::*;
+        let mut frame = NRFFrame::new_unchecked(self.buffer);
+        f(frame.data_mut())
+    }
+}
+
+impl<'a> From<&'a mut [u8]> for NRFRxToken<'a> {
+    fn from(value: &'a mut [u8]) -> Self {
+        Self { buffer: value }
     }
 }
 
