@@ -42,7 +42,7 @@ rt = ["nrf-pac/rt"]
 time = ["dep:embassy-time"]
 
 ## Enable IEEE 802.15.4 Radio implementation
-# ieee802154 = ["dep:embassy-ieee802154"]
+ieee802154 = ["dep:embassy-ieee802154"]
 
 ## Enable defmt
 defmt = [
@@ -65,9 +65,6 @@ gpiote = []
 
 ## Use RTC1 as the time driver for `embassy-time`, with a tick rate of 32.768khz
 time-driver-rtc1 = ["_time-driver"]
-
-## Enable IEEE 802.15.4 MAC compatible implementation
-ieee802154 = ["dep:embassy-ieee802154"]
 
 ## Allow using the NFC pins as regular GPIO pins (P0_09/P0_10 on nRF52, P0_02/P0_03 on nRF53)
 nfc-pins-as-gpio = []
