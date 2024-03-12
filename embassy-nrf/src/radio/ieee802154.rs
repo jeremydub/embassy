@@ -5,7 +5,7 @@ use core::task::Poll;
 
 use embassy_hal_internal::drop::OnDrop;
 use embassy_hal_internal::{into_ref, PeripheralRef};
-use embassy_ieee802154::config::{Channel, RxConfig, TxConfig};
+use embassy_ieee802154::config::{RxConfig, TxConfig};
 
 use super::{state, Error, Instance, InterruptHandler, RadioState, TxPower};
 use crate::interrupt::typelevel::Interrupt;
@@ -267,6 +267,23 @@ impl<'d, T: Instance> Radio<'d, T> {
         self.needs_enable = false;
     }
 
+    /// Moves the radio to the TXIDLE state
+    fn transmit_prepare(&mut self) {
+        // clear related events
+        T::regs().events_ccabusy.reset();
+        T::regs().events_phyend.reset();
+        // NOTE to avoid errata 204 (see rev1 v1.4) we do TX_IDLE -> DISABLED -> RX_IDLE
+        let disable = match self.state() {
+            RadioState::DISABLED => false,
+            RadioState::TX_IDLE => self.needs_enable,
+            _ => true,
+        };
+        if disable {
+            self.disable();
+        }
+        self.needs_enable = false;
+    }
+
     /// Prepare radio for receiving a packet
     fn receive_start(&mut self, packet: &mut [u8]) {
         // NOTE we do NOT check the address of `packet` because the mutable reference ensures it's
@@ -458,6 +475,7 @@ impl<'d, T: Instance> embassy_ieee802154::radio::Radio for Radio<'d, T> {
     async fn enable(&mut self) {}
 
     async unsafe fn prepare_receive(&mut self, cfg: &RxConfig, bytes: &mut [u8; 128]) {
+        self.set_channel(cfg.channel.into());
         self.receive_start(bytes);
     }
 
@@ -491,31 +509,13 @@ impl<'d, T: Instance> embassy_ieee802154::radio::Radio for Radio<'d, T> {
     }
 
     async unsafe fn prepare_transmit(&mut self, cfg: &TxConfig, bytes: &mut [u8]) {
-        let channel = match cfg.channel {
-            Channel::_11 => 11,
-            Channel::_12 => 12,
-            Channel::_13 => 13,
-            Channel::_14 => 14,
-            Channel::_15 => 15,
-            Channel::_16 => 16,
-            Channel::_17 => 17,
-            Channel::_18 => 18,
-            Channel::_19 => 19,
-            Channel::_20 => 20,
-            Channel::_21 => 21,
-            Channel::_22 => 22,
-            Channel::_23 => 23,
-            Channel::_24 => 24,
-            Channel::_25 => 25,
-            Channel::_26 => 26,
-        };
-        self.set_channel(channel);
+        self.set_channel(cfg.channel.into());
 
-        let s = T::state();
         let r = T::regs();
 
         // enable radio to perform cca
-        self.receive_prepare();
+        self.transmit_prepare();
+        self.set_buffer(bytes);
         if cfg.cca {
             // Configure shortcuts
             //
@@ -589,9 +589,6 @@ impl<'d, T: Instance> embassy_ieee802154::radio::Radio for Radio<'d, T> {
     }
 
     fn cancel_current_opperation(&mut self) {
-        let s = T::state();
-        let r = T::regs();
-
         match self.state() {
             RadioState::DISABLED
             | RadioState::RX_DISABLE
@@ -735,7 +732,7 @@ impl<T: AsRef<[u8]>> NRFFrame<T> {
     pub const CAPACITY: u8 = 125;
     const CRC: u8 = 2; // size of the CRC, which is *never* copied to / from RAM
     const MAX_PSDU_LEN: u8 = Self::CAPACITY + Self::CRC;
-    const SIZE: usize = 1 /* PHR */ + Self::MAX_PSDU_LEN as usize;
+    const _SIZE: usize = 1 /* PHR */ + Self::MAX_PSDU_LEN as usize;
 
     /// The length as found in the frame
     pub fn len(&self) -> u8 {
