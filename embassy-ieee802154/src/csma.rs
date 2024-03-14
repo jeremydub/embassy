@@ -4,7 +4,7 @@ pub use dot15d4::csma::CsmaConfig;
 use dot15d4::{
     csma::CsmaDevice,
     phy::{
-        driver::PacketBuffer,
+        driver::FrameBuffer,
         radio::{Radio, RadioFrameMut},
     },
 };
@@ -16,8 +16,8 @@ use crate::driver::{EmbassyDriver, Ieee802154Driver};
 
 pub struct CsmaStack<RADIO> {
     config: CsmaConfig,
-    tx: Channel<NoopRawMutex, PacketBuffer, 1>,
-    rx: Channel<NoopRawMutex, PacketBuffer, 1>,
+    tx: Channel<NoopRawMutex, FrameBuffer, 1>,
+    rx: Channel<NoopRawMutex, FrameBuffer, 1>,
     radio: Cell<Option<RADIO>>,
     hardware_addr: [u8; 8],
 }
@@ -37,7 +37,7 @@ impl<RADIO: Radio> CsmaStack<RADIO> {
     pub fn driver(&self) -> Ieee802154Driver<'_, RADIO> {
         Ieee802154Driver {
             rx: None,
-            tx: PacketBuffer::default(),
+            tx: FrameBuffer::default(),
             tx_channel: self.tx.sender(),
             rx_channel: self.rx.receiver(),
             hardware_addr: self.hardware_addr,
@@ -63,7 +63,7 @@ where
             tx: self.tx.receiver(),
             rx: self.rx.sender(),
         };
-        let mut csma = CsmaDevice::new(radio, rng, driver, timer, self.config.clone());
+        let mut csma = CsmaDevice::new(radio, rng, driver, timer, self.config);
         csma.run().await
     }
 }
