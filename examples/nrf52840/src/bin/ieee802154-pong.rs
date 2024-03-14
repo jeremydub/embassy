@@ -12,7 +12,7 @@ use embassy_ieee802154::csma::{CsmaConfig, CsmaStack};
 use embassy_ieee802154::driver::Ieee802154Driver;
 use embassy_ieee802154::frame::{Address, Frame, FrameBuilder};
 use embassy_ieee802154::radio::Radio as _;
-use embassy_net::driver::{Driver, TxToken};
+use embassy_net::driver::{Driver, RxToken, TxToken};
 use embassy_nrf::{
     bind_interrupts,
     gpio::{Level, Output, OutputDrive},
@@ -75,8 +75,24 @@ async fn main(spawner: Spawner) {
                 None => Poll::Pending,
             }),
             poll_fn(|cx| {
-                device.borrow_mut().receive(cx);
-                Poll::<()>::Pending
+                let mut device = device.borrow_mut();
+                let Some((rx, _tx)) = device.receive(cx) else {
+                    return Poll::Pending;
+                };
+                rx.consume(|buf| {
+                    let Ok(frame) = Frame::new(&*buf) else {
+                        defmt::error!("Malformed frame received: {}", buf);
+                        return;
+                    };
+                    defmt::info!(
+                        "Received a good frame ({}) with payload: ({}) {}",
+                        frame.sequence_number(),
+                        frame.payload().map(|payload| payload.len()).unwrap_or(0),
+                        frame.payload()
+                    );
+                });
+
+                Poll::Ready(())
             }),
         )
         .await;
