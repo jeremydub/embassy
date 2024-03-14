@@ -462,19 +462,26 @@ impl<'d, T: Instance> embassy_ieee802154::radio::Radio for Radio<'d, T> {
     type TxToken<'b> = NRFTxToken<'b>;
 
     async fn disable(&mut self) {
+        defmt::debug!("Disable radio");
         self.disable()
     }
 
-    async fn enable(&mut self) {}
+    async fn enable(&mut self) {
+        defmt::debug!("Enable radio");
+    }
 
     async unsafe fn prepare_receive(&mut self, cfg: &RxConfig, bytes: &mut [u8; 128]) {
-        self.set_channel(cfg.channel.into());
+        let channel = cfg.channel.into();
+        defmt::debug!("Prepare receive to channel: {}", channel);
+        self.set_channel(channel);
         self.receive_start(bytes);
     }
 
     async fn receive(&mut self) -> bool {
         let s = T::state();
         let r = T::regs();
+
+        defmt::debug!("Receive Start");
 
         self.clear_all_interrupts();
         // wait until we have received something
@@ -497,12 +504,15 @@ impl<'d, T: Instance> embassy_ieee802154::radio::Radio for Radio<'d, T> {
         // dropper.defuse();
         // let crc = r.rxcrc.read().rxcrc().bits() as u16;
 
+        defmt::debug!("Receive End");
         // True if successful
         r.crcstatus.read().crcstatus().bit_is_set()
     }
 
     async unsafe fn prepare_transmit(&mut self, cfg: &TxConfig, bytes: &mut [u8]) {
-        self.set_channel(cfg.channel.into());
+        let channel = cfg.channel.into();
+        defmt::debug!("Prepare Transmit Start, Setting channel to: {}", channel);
+        self.set_channel(channel);
 
         let r = T::regs();
 
@@ -543,6 +553,7 @@ impl<'d, T: Instance> embassy_ieee802154::radio::Radio for Radio<'d, T> {
         dma_start_fence();
         // start CCA. In case the channel is clear, the data at packetptr will be sent automatically
 
+        defmt::debug!("Prepare transmit end");
         match (self.state(), cfg.cca) {
             // Re-start receiver (CCA)
             (RadioState::RX_IDLE, true) => r.tasks_ccastart.write(|w| w.tasks_ccastart().set_bit()),
@@ -559,6 +570,7 @@ impl<'d, T: Instance> embassy_ieee802154::radio::Radio for Radio<'d, T> {
         let s = T::state();
         let r = T::regs();
 
+        defmt::debug!("Transmit start");
         self.clear_all_interrupts();
         core::future::poll_fn(|cx| {
             s.event_waker.register(cx.waker());
@@ -593,6 +605,7 @@ impl<'d, T: Instance> embassy_ieee802154::radio::Radio for Radio<'d, T> {
                 radio.tasks_stop.write(|w| w.tasks_stop().set_bit())
             }
         }
+        defmt::debug!("Cancel current operation");
     }
 
     fn ieee802154_address(&self) -> [u8; 8] {

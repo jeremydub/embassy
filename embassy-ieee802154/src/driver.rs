@@ -18,11 +18,11 @@ pub(crate) struct EmbassyDriver<'a> {
 
 impl driver::Driver for EmbassyDriver<'_> {
     async fn transmit(&self) -> FrameBuffer {
-        self.tx.receive().await
+        defmt::dbg!(self.tx.receive().await)
     }
 
     async fn received(&self, buffer: FrameBuffer) {
-        self.rx.send(buffer).await
+        defmt::dbg!(self.rx.send(buffer).await)
     }
 
     /// Higher layers do not currently support error handling
@@ -75,7 +75,7 @@ impl<'ch, R: Radio> Ieee802154Driver<'ch, R> {
     }
 
     fn poll_transmit(&mut self, cx: &mut core::task::Context) {
-        if !self.tx.dirty {
+        if defmt::dbg!(!self.tx.dirty) {
             return;
         }
 
@@ -83,8 +83,8 @@ impl<'ch, R: Radio> Ieee802154Driver<'ch, R> {
             return;
         }
 
-        let msg = core::mem::take(&mut self.tx);
-        if let Err(e) = self.tx_channel.try_send(msg) {
+        let msg = core::mem::take(defmt::dbg!(&mut self.tx));
+        if let Err(e) = defmt::dbg!(self.tx_channel.try_send(msg)) {
             match e {
                 TrySendError::Full(msg) => {
                     // Put it back and retry.
