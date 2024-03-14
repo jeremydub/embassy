@@ -80,7 +80,7 @@ impl<'d, T: Instance> Radio<'d, T> {
         });
         r.pcnf1().write(|w| {
             // Maximum packet length
-            w.set_maxlen(NRFFrame::<[u8; 128]>::MAX_PSDU_LEN);
+            w.set_maxlen(NrfFrame::<[u8; 128]>::MAX_PSDU_LEN);
             // Zero static length
             w.set_statlen(0);
             // Zero base address length
@@ -457,9 +457,9 @@ impl<'d, T: Instance> Radio<'d, T> {
 }
 
 impl<'d, T: Instance> embassy_ieee802154::radio::Radio for Radio<'d, T> {
-    type RadioFrame<B: AsRef<[u8]>> = NRFFrame<B>;
-    type RxToken<'a> = NRFRxToken<'a>;
-    type TxToken<'b> = NRFTxToken<'b>;
+    type RadioFrame<B: AsRef<[u8]>> = NrfFrame<B>;
+    type RxToken<'a> = NrfRxToken<'a>;
+    type TxToken<'b> = NrfTxToken<'b>;
 
     async fn disable(&mut self) {
         self.disable()
@@ -715,11 +715,11 @@ impl<'d, T: Instance> embassy_ieee802154::radio::Radio for Radio<'d, T> {
 /// appended on transmission and verified on reception.
 ///
 /// See figure 119 in the Product Specification of the nRF52840 for more details
-pub struct NRFFrame<T> {
+pub struct NrfFrame<T> {
     buffer: T,
 }
 
-impl<T: AsRef<[u8]>> NRFFrame<T> {
+impl<T: AsRef<[u8]>> NrfFrame<T> {
     // for indexing purposes
     const PHY_HDR: usize = 0;
     const DATA: core::ops::RangeFrom<usize> = 1..;
@@ -750,7 +750,7 @@ impl<T: AsRef<[u8]>> NRFFrame<T> {
     }
 }
 
-impl<T: AsRef<[u8]> + AsMut<[u8]>> NRFFrame<T> {
+impl<T: AsRef<[u8]> + AsMut<[u8]>> NrfFrame<T> {
     /// Set the length of the packet
     pub fn set_len(&mut self, len: u8) {
         assert!(len <= Self::CAPACITY);
@@ -764,7 +764,7 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> NRFFrame<T> {
     }
 }
 
-impl<T: AsRef<[u8]>> embassy_ieee802154::radio::RadioFrame<T> for NRFFrame<T> {
+impl<T: AsRef<[u8]>> embassy_ieee802154::radio::RadioFrame<T> for NrfFrame<T> {
     type Error = super::FrameParsingError;
 
     fn new_unchecked(buffer: T) -> Self {
@@ -785,7 +785,7 @@ impl<T: AsRef<[u8]>> embassy_ieee802154::radio::RadioFrame<T> for NRFFrame<T> {
     }
 }
 
-impl<T: AsRef<[u8]> + AsMut<[u8]>> embassy_ieee802154::radio::RadioFrameMut<T> for NRFFrame<T> {
+impl<T: AsRef<[u8]> + AsMut<[u8]>> embassy_ieee802154::radio::RadioFrameMut<T> for NrfFrame<T> {
     fn data_mut(&mut self) -> &mut [u8] {
         let len = self.len() as usize;
         &mut self.buffer.as_mut()[Self::DATA][..len]
@@ -793,45 +793,45 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> embassy_ieee802154::radio::RadioFrameMut<T> f
 }
 
 /// TxToken implementation for the nRF
-pub struct NRFTxToken<'a> {
+pub struct NrfTxToken<'a> {
     buffer: &'a mut [u8],
 }
 
-impl embassy_ieee802154::radio::TxToken for NRFTxToken<'_> {
+impl embassy_ieee802154::radio::TxToken for NrfTxToken<'_> {
     fn consume<F, R>(self, len: usize, f: F) -> R
     where
         F: FnOnce(&mut [u8]) -> R,
     {
         use embassy_ieee802154::radio::*;
-        let mut frame = NRFFrame::new_unchecked(self.buffer);
+        let mut frame = NrfFrame::new_unchecked(self.buffer);
         frame.set_len(len as u8);
         f(frame.data_mut())
     }
 }
 
-impl<'a> From<&'a mut [u8]> for NRFTxToken<'a> {
+impl<'a> From<&'a mut [u8]> for NrfTxToken<'a> {
     fn from(value: &'a mut [u8]) -> Self {
         Self { buffer: value }
     }
 }
 
 /// RxToken implementation for the nRF
-pub struct NRFRxToken<'a> {
+pub struct NrfRxToken<'a> {
     buffer: &'a mut [u8],
 }
 
-impl embassy_ieee802154::radio::RxToken for NRFRxToken<'_> {
+impl embassy_ieee802154::radio::RxToken for NrfRxToken<'_> {
     fn consume<F, R>(self, f: F) -> R
     where
         F: FnOnce(&mut [u8]) -> R,
     {
         use embassy_ieee802154::radio::*;
-        let mut frame = NRFFrame::new_unchecked(self.buffer);
+        let mut frame = NrfFrame::new_unchecked(self.buffer);
         f(frame.data_mut())
     }
 }
 
-impl<'a> From<&'a mut [u8]> for NRFRxToken<'a> {
+impl<'a> From<&'a mut [u8]> for NrfRxToken<'a> {
     fn from(value: &'a mut [u8]) -> Self {
         Self { buffer: value }
     }
