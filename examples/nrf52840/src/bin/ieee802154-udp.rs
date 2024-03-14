@@ -1,31 +1,30 @@
 #![no_std]
 #![no_main]
 
-use core::cell::RefCell;
-use core::future::poll_fn;
-use core::task::Poll;
+use embassy_net::udp::PacketMetadata;
+use embassy_net::IpAddress;
+use embassy_net::IpEndpoint;
+use embassy_time::Duration;
+use embassy_time::Timer;
+use heapless::Vec;
+
 use defmt::info;
 
 use defmt::unwrap;
 use embassy_executor::Spawner;
-use embassy_futures::select;
 use embassy_ieee802154::csma::{CsmaConfig, CsmaStack};
 use embassy_ieee802154::driver::Ieee802154Driver;
-use embassy_ieee802154::frame::{Address, Frame, FrameBuilder};
 use embassy_ieee802154::radio::Radio as _;
-use embassy_net::driver::{Driver, RxToken, TxToken};
 use embassy_nrf::{
     bind_interrupts,
     peripherals::{RADIO, RNG},
     radio, rng,
 };
-use embassy_time::{Duration, Timer};
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
 use embassy_net::udp::UdpSocket;
-use embassy_net::{IpEndpoint, Ipv6Address, Ipv6Cidr, Stack, StackResources};
-use heapless::Vec;
+use embassy_net::{Ipv6Address, Ipv6Cidr, Stack, StackResources};
 
 type Radio = embassy_nrf::radio::ieee802154::Radio<'static, RADIO>;
 
@@ -45,7 +44,7 @@ async fn main(spawner: Spawner) {
     // We setup the radio
     let radio = embassy_nrf::radio::ieee802154::Radio::new(p.RADIO, Irqs);
     // and request the address given by the manufacturer
-    let hardware_addr = radio.ieee802154_address();
+    let _hardware_addr = radio.ieee802154_address();
 
     // We setup CSMA
     let csma_config = CsmaConfig::default();
@@ -57,27 +56,16 @@ async fn main(spawner: Spawner) {
     // We spawn the task that will control the CSMA task
     unwrap!(spawner.spawn(ieee802154_task(task, p.RNG)));
 
+    let addr = option_env!("ADDRESS").unwrap_or("1").parse().unwrap();
     let config = embassy_net::Config::ipv6_static(embassy_net::StaticConfigV6 {
-        address: Ipv6Cidr::new(
-            Ipv6Address::new(
-                0xfd0e,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                option_env!("ADDRESS").unwrap_or("2").parse().unwrap(),
-            ),
-            64,
-        ),
+        address: Ipv6Cidr::new(Ipv6Address::new(0xfd0e, 0, 0, 0, 0, 0, 0, addr), 64),
         dns_servers: Vec::new(),
         gateway: None,
     });
 
     // Init network stack
     let seed: u64 = 10; // XXX this should be csprng
-    static STACK_CONTAINER: StaticCell<Stack<Device<'static, 'static>>> = StaticCell::new();
+    static STACK_CONTAINER: StaticCell<Stack<Ieee802154Driver<'static, Radio>>> = StaticCell::new();
     static STACK_RESOURCES: StaticCell<StackResources<2>> = StaticCell::new();
     let stack = STACK_CONTAINER.init(Stack::new(
         device,
@@ -92,36 +80,34 @@ async fn main(spawner: Spawner) {
     info!("Network task initialized");
 
     // Then we can use it!
+    let mut rx_meta = [PacketMetadata::EMPTY; 16];
     let mut rx_buffer = [0; 4096];
+    let mut tx_meta = [PacketMetadata::EMPTY; 16];
     let mut tx_buffer = [0; 4096];
+    let mut buf = [0; 4096];
 
-    let msg = "Lorem ipsum dolor sit amet, consectetur adipiscing elit."; // Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.";
+    let mut socket = UdpSocket::new(stack, &mut rx_meta, &mut rx_buffer, &mut tx_meta, &mut tx_buffer);
+    socket.bind(9400).unwrap();
 
     loop {
-        let mut socket = UdpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
-        socket.set_timeout(Some(Duration::from_secs(120)));
-
-        let remote_endpoint = IpEndpoint::from((Ipv6Address::new(0xfd0e, 0, 0, 0, 0, 0, 0, 1), 8000));
-
-        info!("connecting...");
-        let r = socket.connect(remote_endpoint).await;
-        if let Err(e) = r {
-            info!("connect error: {:?}", e);
-            continue;
-        }
-
-        info!("connected!");
-        loop {
-            info!("sending \"{}\" to {}", msg, remote_endpoint);
-            let r = socket.write_all(msg.as_bytes()).await;
-            if let Err(e) = r {
-                info!("write error: {:?}", e);
-                break;
+        // If we are 1 -> echo result back
+        if addr == 1 {
+            let (n, ep) = socket.recv_from(&mut buf).await.unwrap();
+            if let Ok(s) = core::str::from_utf8(&buf[..n]) {
+                info!("ECHO (to {}): {}", ep, s);
+            } else {
+                info!("ECHO (to {}): bytearray len {}", ep, n);
             }
+            socket.send_to(&buf[..n], ep).await.unwrap();
+        } else {
+            // If we are not 1 -> send UDP packet to 1
+            let ep = IpEndpoint::new(IpAddress::v6(0xfd0e, 0, 0, 0, 0, 0, 0, 1), 9400);
+            socket
+                .send_to(b"Hey, how are you? Can you ping this back to me? Please?", ep)
+                .await
+                .unwrap();
 
-            let _ = socket.flush().await;
-
-            Timer::after(Duration::from_secs(5)).await;
+            Timer::after(Duration::from_secs(1)).await;
         }
     }
 }
@@ -135,6 +121,6 @@ async fn ieee802154_task(csma: &'static CsmaStack<Radio>, p_rng: RNG) -> ! {
 }
 
 #[embassy_executor::task]
-async fn net_task(stack: &'static Stack<Device<'static, 'static>>) -> ! {
+async fn net_task(stack: &'static Stack<Ieee802154Driver<'static, Radio>>) -> ! {
     stack.run().await
 }
