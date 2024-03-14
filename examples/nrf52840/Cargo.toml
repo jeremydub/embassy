@@ -39,3 +39,4 @@ microfft = "0.5.0"
 
 [profile.release]
 debug = 2
+panic = "abort"
