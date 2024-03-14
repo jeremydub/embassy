@@ -1,7 +1,7 @@
 use core::marker::PhantomData;
 
 use dot15d4::phy::{
-    driver::{self, PacketBuffer},
+    driver::{self, FrameBuffer},
     radio::{self, Radio},
 };
 use embassy_net_driver::{Capabilities, HardwareAddress, LinkState};
@@ -12,16 +12,16 @@ use embassy_sync::{
 
 /// Driver for the `dot15d4` side
 pub(crate) struct EmbassyDriver<'a> {
-    pub(crate) tx: Receiver<'a, NoopRawMutex, PacketBuffer, 1>,
-    pub(crate) rx: Sender<'a, NoopRawMutex, PacketBuffer, 1>,
+    pub(crate) tx: Receiver<'a, NoopRawMutex, FrameBuffer, 1>,
+    pub(crate) rx: Sender<'a, NoopRawMutex, FrameBuffer, 1>,
 }
 
 impl driver::Driver for EmbassyDriver<'_> {
-    async fn transmit(&self) -> PacketBuffer {
+    async fn transmit(&self) -> FrameBuffer {
         self.tx.receive().await
     }
 
-    async fn received(&self, buffer: PacketBuffer) {
+    async fn received(&self, buffer: FrameBuffer) {
         self.rx.send(buffer).await
     }
 
@@ -33,10 +33,10 @@ impl driver::Driver for EmbassyDriver<'_> {
 }
 
 pub struct Ieee802154Driver<'a, RADIO> {
-    pub(crate) rx: Option<PacketBuffer>,
-    pub(crate) tx: PacketBuffer,
-    pub(crate) tx_channel: Sender<'a, NoopRawMutex, PacketBuffer, 1>,
-    pub(crate) rx_channel: Receiver<'a, NoopRawMutex, PacketBuffer, 1>,
+    pub(crate) rx: Option<FrameBuffer>,
+    pub(crate) tx: FrameBuffer,
+    pub(crate) tx_channel: Sender<'a, NoopRawMutex, FrameBuffer, 1>,
+    pub(crate) rx_channel: Receiver<'a, NoopRawMutex, FrameBuffer, 1>,
     pub(crate) hardware_addr: [u8; 8],
     pub(crate) _radio: PhantomData<RADIO>,
 }
@@ -162,7 +162,7 @@ where
 }
 
 pub struct TxToken<'a, T> {
-    frame: &'a mut PacketBuffer,
+    frame: &'a mut FrameBuffer,
     _inner_token: PhantomData<T>,
 }
 
@@ -181,7 +181,7 @@ where
 }
 
 pub struct RxToken<'a, T> {
-    frame: &'a mut PacketBuffer,
+    frame: &'a mut FrameBuffer,
     _inner_token: PhantomData<T>,
 }
 

@@ -751,7 +751,7 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> NRFFrame<T> {
     /// Set the length of the packet
     pub fn set_len(&mut self, len: u8) {
         assert!(len <= Self::CAPACITY);
-        self.buffer.as_mut()[Self::PHY_HDR] = len;
+        self.buffer.as_mut()[Self::PHY_HDR] = len + Self::CRC;
     }
 
     /// Set the LQI of the frame, make sure that the length needs to be at least 3 bytes long
