@@ -56,10 +56,22 @@ async fn main(spawner: Spawner) {
     // We spawn the task that will control the CSMA task
     unwrap!(spawner.spawn(ieee802154_task(task, p.RNG)));
 
-    let addr = option_env!("ADDR").unwrap_or("1").parse().unwrap();
+    let addr = option_env!("ADDRESS").unwrap_or("1").parse().unwrap();
     let is_root: bool = option_env!("ROOT").unwrap_or("false").parse().unwrap();
+
+    let this_addr = Ipv6Address::new(0xfd0e, 0, 0, 0, 0, 0, 0, addr);
+    let rpl_config = embassy_net::RplConfig::new(embassy_net::RplModeOfOperation::StoringMode);
+    if is_root {
+        defmt::info!("Mote configured as root with address: {}", this_addr);
+        rpl_config.add_root_config(embassy_net::RplRootConfig::new(
+            embassy_net::RplInstanceId::Local(42),
+            this_addr,
+        ));
+    } else {
+        defmt::info!("Mote configured as normal mote with address: {}", this_addr);
+    }
     let config = embassy_net::Config::ipv6_static(embassy_net::StaticConfigV6 {
-        address: Ipv6Cidr::new(Ipv6Address::new(0xfd0e, 0, 0, 0, 0, 0, 0, addr), 64),
+        address: Ipv6Cidr::new(this_addr, 64),
         dns_servers: Vec::new(),
         gateway: None,
         rpl_config: None,
@@ -100,7 +112,6 @@ async fn main(spawner: Spawner) {
             } else {
                 info!("ECHO (to {}): bytearray len {}", ep, n);
             }
-            socket.send_to(&buf[..n], ep).await.unwrap();
         } else {
             // If we are not 1 -> send UDP packet to 1
             let ep = IpEndpoint::new(IpAddress::v6(0xfd0e, 0, 0, 0, 0, 0, 0, 1), 9400);
@@ -109,7 +120,11 @@ async fn main(spawner: Spawner) {
                 .await
                 .unwrap();
 
-            Timer::after(Duration::from_secs(1)).await;
+            Timer::after(Duration::from_secs(10)).await;
+
+            if socket.may_recv() {
+                defmt::info!("Received some data: {}", socket.recv_from(&mut buf).await.unwrap());
+            }
         }
     }
 }

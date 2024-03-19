@@ -36,10 +36,10 @@ use futures::pin_mut;
 use heapless::Vec;
 #[cfg(feature = "igmp")]
 pub use smoltcp::iface::MulticastError;
-#[cfg(feature = "proto-rpl")]
-pub use smoltcp::iface::RplConfig;
 #[allow(unused_imports)]
 use smoltcp::iface::{Interface, SocketHandle, SocketSet, SocketStorage};
+#[cfg(feature = "proto-rpl")]
+pub use smoltcp::iface::{RplConfig, RplInstanceId, RplModeOfOperation, RplRootConfig, TrickleTimer};
 use smoltcp::phy::Medium;
 #[cfg(feature = "dhcpv4")]
 use smoltcp::socket::dhcpv4::{self, RetryConfig};
