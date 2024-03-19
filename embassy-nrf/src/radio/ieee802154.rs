@@ -351,7 +351,6 @@ impl<'d, T: Instance> Radio<'d, T> {
 
             if r.events_phyend.read().events_phyend().bit_is_set() {
                 r.events_phyend.reset();
-                trace!("RX done poll");
                 return Poll::Ready(());
             } else {
                 r.intenset.write(|w| w.phyend().set());
@@ -442,11 +441,9 @@ impl<'d, T: Instance> Radio<'d, T> {
             if r.events_phyend.read().events_phyend().bit_is_set() {
                 r.events_phyend.reset();
                 r.events_ccabusy.reset();
-                trace!("TX done poll");
                 return Poll::Ready(TransmitResult::Success);
             } else if r.events_ccabusy.read().events_ccabusy().bit_is_set() {
                 r.events_ccabusy.reset();
-                trace!("TX no CCA");
                 return Poll::Ready(TransmitResult::ChannelInUse);
             }
 
@@ -491,8 +488,6 @@ impl<'d, T: Instance> embassy_ieee802154::radio::Radio for Radio<'d, T> {
 
             if r.events_phyend.read().events_phyend().bit_is_set() {
                 r.events_phyend.reset();
-                #[cfg(feature = "defmt")]
-                trace!("RX done poll");
                 return Poll::Ready(());
             } else {
                 r.intenset.write(|w| w.phyend().set());
@@ -576,11 +571,9 @@ impl<'d, T: Instance> embassy_ieee802154::radio::Radio for Radio<'d, T> {
             if r.events_phyend.read().events_phyend().bit_is_set() {
                 r.events_phyend.reset();
                 r.events_ccabusy.reset();
-                trace!("TX done poll");
                 return Poll::Ready(true); // Success
             } else if r.events_ccabusy.read().events_ccabusy().bit_is_set() {
                 r.events_ccabusy.reset();
-                trace!("TX no CCA");
                 return Poll::Ready(false); // CCA failed
             }
 
