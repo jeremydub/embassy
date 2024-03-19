@@ -89,7 +89,7 @@ where
             _ => DnsQueryType::A,
         };
         let addrs = self.query(host, qtype).await?;
-        if let Some(first) = addrs.get(0) {
+        if let Some(first) = addrs.first() {
             Ok(match first {
                 #[cfg(feature = "proto-ipv4")]
                 IpAddress::Ipv4(addr) => IpAddr::V4(addr.0.into()),

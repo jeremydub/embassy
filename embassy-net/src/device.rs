@@ -96,6 +96,7 @@ where
     where
         F: FnOnce(&mut [u8]) -> R,
     {
+        #[allow(clippy::let_and_return)]
         self.0.consume(len, |buf| {
             let r = f(buf);
             #[cfg(feature = "packet-trace")]

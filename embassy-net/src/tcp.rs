@@ -199,7 +199,7 @@ impl<'a> TcpSocket<'a> {
 
         match {
             self.io
-                .with_mut(|s, i| s.connect(i.context(), remote_endpoint, local_port))
+                .with_mut(|s, i| s.connect(i.context_mut(), remote_endpoint, local_port))
         } {
             Ok(()) => {}
             Err(tcp::ConnectError::InvalidState) => return Err(ConnectError::InvalidState),
@@ -658,7 +658,7 @@ pub mod client {
                 IpAddr::V6(_) => panic!("ipv6 support not enabled"),
             };
             let remote_endpoint = (addr, remote.port());
-            let mut socket = TcpConnection::new(&self.stack, self.state)?;
+            let mut socket = TcpConnection::new(self.stack, self.state)?;
             socket
                 .socket
                 .connect(remote_endpoint)
@@ -739,6 +739,7 @@ pub mod client {
     }
 
     impl<T, const N: usize> Pool<T, N> {
+        #[allow(clippy::declare_interior_mutable_const)]
         const VALUE: Cell<bool> = Cell::new(false);
         const UNINIT: UnsafeCell<MaybeUninit<T>> = UnsafeCell::new(MaybeUninit::uninit());
 

@@ -16,11 +16,11 @@ categories = [
 [package.metadata.embassy_docs]
 src_base = "https://github.com/embassy-rs/embassy/blob/embassy-net-v$VERSION/embassy-net/src/"
 src_base_git = "https://github.com/embassy-rs/embassy/blob/$COMMIT/embassy-net/src/"
-features = ["defmt", "tcp", "udp", "raw", "dns", "dhcpv4", "proto-ipv6", "medium-ethernet", "medium-ip", "medium-ieee802154", "igmp", "dhcpv4-hostname"]
+features = ["defmt", "tcp", "udp", "raw", "dns", "dhcpv4", "proto-ipv6", "medium-ethernet", "medium-ip", "medium-ieee802154", "igmp", "dhcpv4-hostname","proto-rpl-2"]
 target = "thumbv7em-none-eabi"
 
 [package.metadata.docs.rs]
-features = ["defmt", "tcp", "udp", "raw", "dns", "dhcpv4", "proto-ipv6", "medium-ethernet", "medium-ip", "medium-ieee802154", "igmp", "dhcpv4-hostname"]
+features = ["defmt", "tcp", "udp", "raw", "dns", "dhcpv4", "proto-ipv6", "medium-ethernet", "medium-ip", "medium-ieee802154", "igmp", "dhcpv4-hostname","proto-rpl-2"]
 
 [features]
 default = []
@@ -52,6 +52,16 @@ dhcpv4-hostname = ["dhcpv4"]
 proto-ipv4 = ["smoltcp/proto-ipv4"]
 ## Enable IPv6 support
 proto-ipv6 = ["smoltcp/proto-ipv6"]
+## proto-rpl
+proto-rpl = ["smoltcp/proto-rpl", "proto-ipv6"]
+## Enable RPL support in MOP 0
+proto-rpl-0 = ["proto-rpl", "smoltcp/rpl-mop-0"]
+## Enable RPL support in MOP 1
+proto-rpl-1 = ["proto-rpl", "smoltcp/rpl-mop-1"]
+## Enable RPL support in MOP 2
+proto-rpl-2 = ["proto-rpl", "smoltcp/rpl-mop-2"]
+## Enable RPL support in MOP 3
+proto-rpl-3 = ["proto-rpl", "smoltcp/rpl-mop-3"]
 ## Enable the Ethernet medium
 medium-ethernet = ["smoltcp/medium-ethernet"]
 ## Enable the IP medium
@@ -66,7 +76,7 @@ igmp = ["smoltcp/proto-igmp"]
 defmt = { version = "0.3", optional = true }
 log = { version = "0.4.14", optional = true }
 
-smoltcp = { version = "0.11.0", default-features = false, features = [
+smoltcp = { path="../../smoltcp", version = "0.11.0", default-features = false, features = [
   "socket",
   "async",
 ] }

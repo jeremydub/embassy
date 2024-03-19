@@ -358,11 +358,11 @@ impl<D: Driver> Stack<D> {
     }
 
     fn with<R>(&self, f: impl FnOnce(&SocketStack, &Inner<D>) -> R) -> R {
-        f(&*self.socket.borrow(), &*self.inner.borrow())
+        f(&self.socket.borrow(), &*self.inner.borrow())
     }
 
     fn with_mut<R>(&self, f: impl FnOnce(&mut SocketStack, &mut Inner<D>) -> R) -> R {
-        f(&mut *self.socket.borrow_mut(), &mut *self.inner.borrow_mut())
+        f(&mut self.socket.borrow_mut(), &mut *self.inner.borrow_mut())
     }
 
     /// Get the hardware address of the network interface.
@@ -525,7 +525,7 @@ impl<D: Driver> Stack<D> {
         let query = poll_fn(|cx| {
             self.with_mut(|s, i| {
                 let socket = s.sockets.get_mut::<dns::Socket>(i.dns_socket);
-                match socket.start_query(s.iface.context(), name, qtype) {
+                match socket.start_query(s.iface.context_mut(), name, qtype) {
                     Ok(handle) => {
                         s.waker.wake();
                         Poll::Ready(Ok(handle))
@@ -777,11 +777,11 @@ impl<D: Driver> Inner<D> {
             debug!("   Default gateway: {:?}", config.gateway);
 
             unwrap!(addrs.push(IpCidr::Ipv4(config.address)).ok());
-            gateway_v4 = config.gateway.into();
+            gateway_v4 = config.gateway;
             #[cfg(feature = "dns")]
             for s in &config.dns_servers {
                 debug!("   DNS server:      {:?}", s);
-                unwrap!(dns_servers.push(s.clone().into()).ok());
+                unwrap!(dns_servers.push((*s).into()).ok());
             }
         } else {
             info!("IPv4: DOWN");
@@ -794,11 +794,11 @@ impl<D: Driver> Inner<D> {
             debug!("   Default gateway: {:?}", config.gateway);
 
             unwrap!(addrs.push(IpCidr::Ipv6(config.address)).ok());
-            gateway_v6 = config.gateway.into();
+            gateway_v6 = config.gateway;
             #[cfg(feature = "dns")]
             for s in &config.dns_servers {
                 debug!("   DNS server:      {:?}", s);
-                unwrap!(dns_servers.push(s.clone().into()).ok());
+                unwrap!(dns_servers.push((*s).into()).ok());
             }
         } else {
             info!("IPv6: DOWN");
@@ -904,7 +904,7 @@ impl<D: Driver> Inner<D> {
             self.apply_static_config(s);
         }
 
-        if let Some(poll_at) = s.iface.poll_at(timestamp, &mut s.sockets) {
+        if let Some(poll_at) = s.iface.poll_at(timestamp, &s.sockets) {
             let t = Timer::at(instant_from_smoltcp(poll_at));
             pin_mut!(t);
             if t.poll(cx).is_ready() {
