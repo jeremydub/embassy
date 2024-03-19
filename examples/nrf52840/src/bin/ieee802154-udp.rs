@@ -56,11 +56,13 @@ async fn main(spawner: Spawner) {
     // We spawn the task that will control the CSMA task
     unwrap!(spawner.spawn(ieee802154_task(task, p.RNG)));
 
-    let addr = option_env!("ADDRESS").unwrap_or("1").parse().unwrap();
+    let addr = option_env!("ADDR").unwrap_or("1").parse().unwrap();
+    let is_root: bool = option_env!("ROOT").unwrap_or("false").parse().unwrap();
     let config = embassy_net::Config::ipv6_static(embassy_net::StaticConfigV6 {
         address: Ipv6Cidr::new(Ipv6Address::new(0xfd0e, 0, 0, 0, 0, 0, 0, addr), 64),
         dns_servers: Vec::new(),
         gateway: None,
+        rpl_config: None,
     });
 
     // Init network stack

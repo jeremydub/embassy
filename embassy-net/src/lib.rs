@@ -36,6 +36,8 @@ use futures::pin_mut;
 use heapless::Vec;
 #[cfg(feature = "igmp")]
 pub use smoltcp::iface::MulticastError;
+#[cfg(feature = "proto-rpl")]
+pub use smoltcp::iface::RplConfig;
 #[allow(unused_imports)]
 use smoltcp::iface::{Interface, SocketHandle, SocketSet, SocketStorage};
 use smoltcp::phy::Medium;
@@ -120,6 +122,9 @@ pub struct StaticConfigV6 {
     pub gateway: Option<Ipv6Address>,
     /// DNS servers.
     pub dns_servers: Vec<Ipv6Address, 3>,
+    #[cfg(feature = "proto-rpl")]
+    /// Rpl Config
+    pub rpl_config: Option<RplConfig>,
 }
 
 /// DHCP configuration.
@@ -301,6 +306,18 @@ impl<D: Driver> Stack<D> {
         let (hardware_addr, medium) = to_smoltcp_hardware_address(device.hardware_address());
         let mut iface_cfg = smoltcp::iface::Config::new(hardware_addr);
         iface_cfg.random_seed = random_seed;
+
+        #[cfg(feature = "proto-rpl")]
+        // Pass down the config for Rpl enabled devices
+        {
+            iface_cfg.rpl_config = match &config.ipv6 {
+                ConfigV6::Static(StaticConfigV6 {
+                    rpl_config: Some(config),
+                    ..
+                }) => Some(config.clone()),
+                _ => None,
+            };
+        }
 
         let iface = Interface::new(
             iface_cfg,
