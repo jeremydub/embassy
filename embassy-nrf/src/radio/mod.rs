@@ -51,7 +51,7 @@ pub enum Error {
 #[non_exhaustive]
 pub enum FrameParsingError {
     /// Buffer was too long.
-    BufferTooLong,
+    BufferTooLong(u8),
 }
 
 /// Interrupt handler

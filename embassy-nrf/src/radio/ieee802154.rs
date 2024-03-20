@@ -772,9 +772,9 @@ impl<T: AsRef<[u8]>> embassy_ieee802154::radio::RadioFrame<T> for NrfFrame<T> {
     }
 
     fn new_checked(buffer: T) -> Result<Self, Self::Error> {
-        let len = buffer.as_ref()[Self::PHY_HDR];
+        let len = buffer.as_ref()[Self::PHY_HDR] - Self::CRC;
         if len > Self::CAPACITY {
-            return Err(Self::Error::BufferTooLong);
+            return Err(Self::Error::BufferTooLong(len));
         }
 
         Ok(Self::new_unchecked(buffer))

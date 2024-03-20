@@ -60,10 +60,10 @@ async fn main(spawner: Spawner) {
     let is_root: bool = option_env!("ROOT").unwrap_or("false").parse().unwrap();
 
     let this_addr = Ipv6Address::new(0xfd0e, 0, 0, 0, 0, 0, 0, addr);
-    let rpl_config = embassy_net::RplConfig::new(embassy_net::RplModeOfOperation::StoringMode);
+    let mut rpl_config = embassy_net::RplConfig::new(embassy_net::RplModeOfOperation::StoringMode);
     if is_root {
         defmt::info!("Mote configured as root with address: {}", this_addr);
-        rpl_config.add_root_config(embassy_net::RplRootConfig::new(
+        rpl_config = rpl_config.add_root_config(embassy_net::RplRootConfig::new(
             embassy_net::RplInstanceId::Local(42),
             this_addr,
         ));
@@ -74,7 +74,7 @@ async fn main(spawner: Spawner) {
         address: Ipv6Cidr::new(this_addr, 64),
         dns_servers: Vec::new(),
         gateway: None,
-        rpl_config: None,
+        rpl_config: Some(rpl_config),
     });
 
     // Init network stack
