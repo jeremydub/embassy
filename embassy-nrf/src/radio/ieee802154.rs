@@ -512,9 +512,9 @@ impl<'d, T: Instance> embassy_ieee802154::radio::Radio for Radio<'d, T> {
         let r = T::regs();
 
         // enable radio to perform cca
-        self.transmit_prepare();
         self.set_buffer(bytes);
         if cfg.cca {
+            self.receive_prepare();
             // Configure shortcuts
             //
             // The radio goes through following states when sending a 802.15.4 packet
@@ -536,6 +536,7 @@ impl<'d, T: Instance> embassy_ieee802154::radio::Radio for Radio<'d, T> {
                     .enabled()
             });
         } else {
+            self.transmit_prepare();
             r.shorts
                 .write(|w| w.txready_start().enabled().phyend_disable().enabled());
         }

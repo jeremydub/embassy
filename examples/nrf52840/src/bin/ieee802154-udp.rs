@@ -124,7 +124,7 @@ async fn main(spawner: Spawner) {
                 .await
                 .unwrap();
 
-            Timer::after(Duration::from_secs(10)).await;
+            Timer::after(Duration::from_millis(200)).await;
 
             if socket.may_recv() {
                 defmt::info!("Received some data: {}", socket.recv_from(&mut buf).await.unwrap());
