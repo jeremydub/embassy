@@ -598,19 +598,23 @@ impl<'d, T: Instance> embassy_ieee802154::radio::Radio for Radio<'d, T> {
         }
     }
 
+    /// Retrieves the hardware address from information in the hardware
     fn ieee802154_address(&self) -> [u8; 8] {
+        // Implementation inspired by implementation in Contiki
+        const NORDIC_SEMI_VENDOR_OUI: u64 = 0xF4CE36;
+
         let ficr = unsafe { crate::pac::Peripherals::steal().FICR };
-        let [id1, id2] = &ficr.deviceid; // FIXME: Should this be modified to DEVICEADDR (only 48bit)
+        let [id1, id2] = &ficr.deviceaddr; // FIXME: Should this be modified to DEVICEADDR (only 48bit)
         let [id1, id2] = [id1.read().bits(), id2.read().bits()];
         [
-            ((id1 & 0xf000u32) >> 24u32) as u8,
-            ((id1 & 0x0f00u32) >> 16u32) as u8,
-            ((id1 & 0x00f0u32) >> 8u32) as u8,
-            ((id1 & 0x000fu32) >> 0u32) as u8,
-            ((id2 & 0xf000u32) >> 24u32) as u8,
-            ((id2 & 0x0f00u32) >> 16u32) as u8,
-            ((id2 & 0x00f0u32) >> 8u32) as u8,
-            ((id2 & 0x000fu32) >> 0u32) as u8,
+            (NORDIC_SEMI_VENDOR_OUI >> 16 & 0xFF) as u8,
+            (NORDIC_SEMI_VENDOR_OUI >> 8 & 0xFF) as u8,
+            (NORDIC_SEMI_VENDOR_OUI & 0xFF) as u8,
+            (id2 & 0xFF) as u8,
+            (id1 >> 24 & 0xFF) as u8,
+            (id1 >> 16 & 0xFF) as u8,
+            (id1 >> 8 & 0xFF) as u8,
+            (id1 & 0xFF) as u8,
         ]
     }
 }

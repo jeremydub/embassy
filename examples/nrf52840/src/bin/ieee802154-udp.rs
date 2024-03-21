@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 
+use embassy_ieee802154::config::Channel;
 use embassy_net::udp::PacketMetadata;
 use embassy_net::IpAddress;
 use embassy_net::IpEndpoint;
@@ -47,7 +48,10 @@ async fn main(spawner: Spawner) {
     let _hardware_addr = radio.ieee802154_address();
 
     // We setup CSMA
-    let csma_config = CsmaConfig::default();
+    let csma_config = CsmaConfig {
+        channel: Channel::_16, // Change channel, so we do not have interference with other networks by default
+        ..Default::default()
+    };
     static CSMA_TASK: StaticCell<CsmaStack<Radio>> = StaticCell::new();
     let task: &'static _ = CSMA_TASK.init(CsmaStack::new(radio, csma_config));
     // Ask a driver, such that we can control the csma task, by requesting to transmit/receive frames
