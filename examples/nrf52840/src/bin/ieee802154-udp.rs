@@ -45,7 +45,7 @@ async fn main(spawner: Spawner) {
     // We setup the radio
     let radio = embassy_nrf::radio::ieee802154::Radio::new(p.RADIO, Irqs);
     // and request the address given by the manufacturer
-    let _hardware_addr = radio.ieee802154_address();
+    let hardware_addr = radio.ieee802154_address();
 
     // We setup CSMA
     let csma_config = CsmaConfig {
@@ -60,7 +60,9 @@ async fn main(spawner: Spawner) {
     // We spawn the task that will control the CSMA task
     unwrap!(spawner.spawn(ieee802154_task(task, p.RNG)));
 
-    let addr = option_env!("ADDRESS").unwrap_or("1").parse().unwrap();
+    let addr = option_env!("ADDRESS")
+        .map(|addr| addr.parse::<u16>().unwrap())
+        .unwrap_or(((hardware_addr[6] as u16) << 8) | (hardware_addr[7] as u16));
     let is_root: bool = option_env!("ROOT").unwrap_or("false").parse().unwrap();
 
     let this_addr = Ipv6Address::new(0xfd0e, 0, 0, 0, 0, 0, 0, addr);
