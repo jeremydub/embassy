@@ -43,9 +43,17 @@ async fn main(spawner: Spawner) {
     let p = embassy_nrf::init(config);
 
     // We setup the radio
-    let radio = embassy_nrf::radio::ieee802154::Radio::new(p.RADIO, Irqs);
+    let mut radio = embassy_nrf::radio::ieee802154::Radio::new(p.RADIO, Irqs);
     // and request the address given by the manufacturer
     let hardware_addr = radio.ieee802154_address();
+
+    // Weaken the radio if configured
+    if option_env!("WEAKEN")
+        .map(|weaken| weaken.parse::<bool>().unwrap_or(false))
+        .unwrap_or(false)
+    {
+        radio.set_transmission_power(-12);
+    }
 
     // We setup CSMA
     let csma_config = CsmaConfig {
@@ -118,6 +126,7 @@ async fn main(spawner: Spawner) {
             } else {
                 info!("ECHO (to {}): bytearray len {}", ep, n);
             }
+            socket.send_to(&buf[..n], ep).await.unwrap();
         } else {
             // If we are not 1 -> send UDP packet to 1
             let ep = IpEndpoint::new(IpAddress::v6(0xfd0e, 0, 0, 0, 0, 0, 0, 1), 9400);
