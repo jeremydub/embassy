@@ -124,6 +124,8 @@ pub struct StaticConfigV4 {
 pub struct StaticConfigV6 {
     /// IP address and subnet mask.
     pub address: Ipv6Cidr,
+    /// Joined multicast addresses
+    pub multicast_addresses: heapless::Vec<Ipv6Address, 4>, // FIXME: make size in sync with smoltcp
     /// Default gateway.
     pub gateway: Option<Ipv6Address>,
     /// DNS servers.
@@ -325,17 +327,32 @@ impl<D: Driver> Stack<D> {
             };
         }
 
-        let iface = Interface::new(
+        let mut driver_adaptor = DriverAdapter {
+            inner: &mut device,
+            cx: None,
+            medium,
+        };
+        let now = instant_to_smoltcp(Instant::now());
+
+        let mut iface = Interface::new(
             iface_cfg,
-            &mut DriverAdapter {
-                inner: &mut device,
-                cx: None,
-                medium,
-            },
+            &mut driver_adaptor,
             &mut resources.multicast_metadata[..],
             &mut resources.multicast_payload[..],
-            instant_to_smoltcp(Instant::now()),
+            now,
         );
+
+        #[cfg(feature = "proto-ipv6")]
+        match &config.ipv6 {
+            ConfigV6::Static(StaticConfigV6 {
+                multicast_addresses, ..
+            }) => {
+                for address in multicast_addresses {
+                    iface.join_multicast_group(&mut driver_adaptor, *address, now);
+                }
+            }
+            _ => (),
+        }
 
         let sockets = SocketSet::new(&mut resources.sockets[..]);
 

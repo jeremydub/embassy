@@ -1,9 +1,10 @@
 #![no_std]
 #![no_main]
 
+use core::str::FromStr;
+
 use embassy_ieee802154::config::Channel;
 use embassy_net::udp::PacketMetadata;
-use embassy_net::IpAddress;
 use embassy_net::IpEndpoint;
 use embassy_time::Duration;
 use embassy_time::Timer;
@@ -57,7 +58,7 @@ async fn main(spawner: Spawner) {
 
     // We setup CSMA
     let mut csma_config = CsmaConfig::default();
-    csma_config.channel = Channel::_16; // Change channel, so we do not have interference with other networks by default
+    csma_config.channel = Channel::_25; // Change channel, so we do not have interference with other networks by default
 
     static CSMA_TASK: StaticCell<CsmaStack<Radio>> = StaticCell::new();
     let task: &'static _ = CSMA_TASK.init(CsmaStack::new(radio, csma_config));
@@ -83,8 +84,17 @@ async fn main(spawner: Spawner) {
     } else {
         defmt::info!("Mote configured as normal mote with address: {}", this_addr);
     }
+
+    let multicast_addresses = Vec::from_iter(
+        option_env!("MULTICAST_ADDRESSES")
+            .iter()
+            .flat_map(|addrs| addrs.split(','))
+            .filter_map(|addr| Ipv6Address::from_str(addr).ok())
+            .inspect(|addr| defmt::info!("Subscribing to multicast address: {}", addr)),
+    );
     let config = embassy_net::Config::ipv6_static(embassy_net::StaticConfigV6 {
         address: Ipv6Cidr::new(this_addr, 64),
+        multicast_addresses,
         dns_servers: Vec::new(),
         gateway: None,
         rpl_config: Some(rpl_config),
@@ -128,13 +138,18 @@ async fn main(spawner: Spawner) {
             socket.send_to(&buf[..n], ep).await.unwrap();
         } else {
             // If we are not 1 -> send UDP packet to 1
-            let ep = IpEndpoint::new(IpAddress::v6(0xfd0e, 0, 0, 0, 0, 0, 0, 1), 9400);
+            let send_to = option_env!("SEND_TO")
+                .and_then(|addr| Ipv6Address::from_str(addr).ok())
+                .unwrap_or(Ipv6Address::new(0xfd0e, 0, 0, 0, 0, 0, 0, 1));
+            defmt::info!("Sending something to {}", send_to);
+
+            let ep = IpEndpoint::new(send_to.into(), 9400);
             socket
                 .send_to(b"Hey, how are you? Can you ping this back to me? Please?", ep)
                 .await
                 .unwrap();
 
-            Timer::after(Duration::from_millis(200)).await;
+            Timer::after(Duration::from_millis(5000)).await;
 
             if socket.may_recv() {
                 defmt::info!("Received some data: {}", socket.recv_from(&mut buf).await.unwrap());
