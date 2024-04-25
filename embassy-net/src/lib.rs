@@ -36,6 +36,7 @@ use futures::pin_mut;
 use heapless::Vec;
 #[cfg(feature = "igmp")]
 pub use smoltcp::iface::MulticastError;
+pub use smoltcp::iface::MulticastMetadata;
 #[allow(unused_imports)]
 use smoltcp::iface::{Interface, SocketHandle, SocketSet, SocketStorage};
 #[cfg(feature = "proto-rpl")]
@@ -43,6 +44,7 @@ pub use smoltcp::iface::{RplConfig, RplInstanceId, RplModeOfOperation, RplRootCo
 use smoltcp::phy::Medium;
 #[cfg(feature = "dhcpv4")]
 use smoltcp::socket::dhcpv4::{self, RetryConfig};
+use smoltcp::storage::PacketMetadata;
 #[cfg(feature = "medium-ethernet")]
 pub use smoltcp::wire::EthernetAddress;
 #[cfg(any(feature = "medium-ethernet", feature = "medium-ieee802154", feature = "medium-ip"))]
@@ -74,6 +76,8 @@ pub struct StackResources<const SOCK: usize> {
     queries: [Option<dns::DnsQuery>; MAX_QUERIES],
     #[cfg(feature = "dhcpv4-hostname")]
     hostname: core::cell::UnsafeCell<HostnameResources>,
+    multicast_metadata: [PacketMetadata<MulticastMetadata>; 16],
+    multicast_payload: [u8; 2048],
 }
 
 #[cfg(feature = "dhcpv4-hostname")]
@@ -96,6 +100,8 @@ impl<const SOCK: usize> StackResources<SOCK> {
                 option: smoltcp::wire::DhcpOption { kind: 0, data: &[] },
                 data: [0; MAX_HOSTNAME_LEN],
             }),
+            multicast_metadata: [PacketMetadata::EMPTY; 16],
+            multicast_payload: [0; 2048],
         }
     }
 }
@@ -270,7 +276,7 @@ struct Inner<D: Driver> {
 
 pub(crate) struct SocketStack {
     pub(crate) sockets: SocketSet<'static>,
-    pub(crate) iface: Interface,
+    pub(crate) iface: Interface<'static>,
     pub(crate) waker: WakerRegistration,
     next_local_port: u16,
 }
@@ -326,6 +332,8 @@ impl<D: Driver> Stack<D> {
                 cx: None,
                 medium,
             },
+            &mut resources.multicast_metadata[..],
+            &mut resources.multicast_payload[..],
             instant_to_smoltcp(Instant::now()),
         );
 

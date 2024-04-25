@@ -56,10 +56,9 @@ async fn main(spawner: Spawner) {
     }
 
     // We setup CSMA
-    let csma_config = CsmaConfig {
-        channel: Channel::_16, // Change channel, so we do not have interference with other networks by default
-        ..Default::default()
-    };
+    let mut csma_config = CsmaConfig::default();
+    csma_config.channel = Channel::_16; // Change channel, so we do not have interference with other networks by default
+
     static CSMA_TASK: StaticCell<CsmaStack<Radio>> = StaticCell::new();
     let task: &'static _ = CSMA_TASK.init(CsmaStack::new(radio, csma_config));
     // Ask a driver, such that we can control the csma task, by requesting to transmit/receive frames
