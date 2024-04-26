@@ -3,6 +3,7 @@
 
 use core::str::FromStr;
 
+use embassy_futures::select::select;
 use embassy_ieee802154::config::Channel;
 use embassy_net::udp::PacketMetadata;
 use embassy_net::IpEndpoint;
@@ -58,7 +59,7 @@ async fn main(spawner: Spawner) {
 
     // We setup CSMA
     let mut csma_config = CsmaConfig::default();
-    csma_config.channel = Channel::_25; // Change channel, so we do not have interference with other networks by default
+    csma_config.channel = Channel::_26; // Change channel, so we do not have interference with other networks by default
 
     static CSMA_TASK: StaticCell<CsmaStack<Radio>> = StaticCell::new();
     let task: &'static _ = CSMA_TASK.init(CsmaStack::new(radio, csma_config));
@@ -149,11 +150,13 @@ async fn main(spawner: Spawner) {
                 .await
                 .unwrap();
 
-            Timer::after(Duration::from_millis(5000)).await;
-
-            if socket.may_recv() {
-                defmt::info!("Received some data: {}", socket.recv_from(&mut buf).await.unwrap());
-            }
+            select(
+                async {
+                    defmt::info!("Received some data: {}", socket.recv_from(&mut buf).await.unwrap());
+                },
+                Timer::after(Duration::from_millis(5000)),
+            )
+            .await;
         }
     }
 }
