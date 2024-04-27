@@ -348,7 +348,11 @@ impl<D: Driver> Stack<D> {
                 multicast_addresses, ..
             }) => {
                 for address in multicast_addresses {
-                    iface.join_multicast_group(&mut driver_adaptor, *address, now);
+                    // Note here that the multicast group should be empty at
+                    // this point, so we have way to many multicast
+                    // subscriptions. If this unwrap is an issue, please
+                    // increase the available slots for multicast groups in smoltcp
+                    unwrap!(iface.join_multicast_group(&mut driver_adaptor, *address, now));
                 }
             }
             _ => (),
