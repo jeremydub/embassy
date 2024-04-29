@@ -146,36 +146,25 @@ async fn main(spawner: Spawner) {
     socket.bind(9400).unwrap();
 
     loop {
-        // If we are 1 -> echo result back
-        if addr == 1 {
-            let (n, ep) = socket.recv_from(&mut buf).await.unwrap();
-            if let Ok(s) = core::str::from_utf8(&buf[..n]) {
-                info!("ECHO (to {}): {}", ep, s);
-            } else {
-                info!("ECHO (to {}): bytearray len {}", ep, n);
-            }
-            socket.send_to(&buf[..n], ep).await.unwrap();
-        } else {
-            // If we are not 1 -> send UDP packet to 1
-            let send_to = option_env!("SEND_TO")
-                .and_then(|addr| Ipv6Address::from_str(addr).ok())
-                .unwrap_or(Ipv6Address::new(0xfd0e, 0, 0, 0, 0, 0, 0, 1));
-            defmt::info!("Sending something to {}", send_to);
+        // If we are not 1 -> send UDP packet to 1
+        let send_to = option_env!("SEND_TO")
+            .and_then(|addr| Ipv6Address::from_str(addr).ok())
+            .unwrap_or(Ipv6Address::new(0xfd0e, 0, 0, 0, 0, 0, 0, 1));
+        defmt::info!("Sending something to {}", send_to);
 
-            let ep = IpEndpoint::new(send_to.into(), 9400);
-            socket
-                .send_to(b"Hey, how are you? Can you ping this back to me? Please?", ep)
-                .await
-                .unwrap();
+        let ep = IpEndpoint::new(send_to.into(), 9400);
+        socket
+            .send_to(b"Hey, how are you? Can you ping this back to me? Please?", ep)
+            .await
+            .unwrap();
 
-            select(
-                async {
-                    defmt::info!("Received some data: {}", socket.recv_from(&mut buf).await.unwrap());
-                },
-                Timer::after(Duration::from_millis(5000)),
-            )
-            .await;
-        }
+        select(
+            async {
+                defmt::info!("Received some data: {}", socket.recv_from(&mut buf).await.unwrap());
+            },
+            Timer::after(Duration::from_millis(5000)),
+        )
+        .await;
     }
 }
 
