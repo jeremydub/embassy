@@ -59,7 +59,25 @@ async fn main(spawner: Spawner) {
 
     // We setup CSMA
     let mut csma_config = CsmaConfig::default();
-    csma_config.channel = Channel::_26; // Change channel, so we do not have interference with other networks by default
+    csma_config.channel = match option_env!("CHANNEL") {
+        Some("11") => Channel::_11,
+        Some("12") => Channel::_12,
+        Some("13") => Channel::_13,
+        Some("14") => Channel::_14,
+        Some("15") => Channel::_15,
+        Some("16") => Channel::_16,
+        Some("17") => Channel::_17,
+        Some("18") => Channel::_18,
+        Some("19") => Channel::_19,
+        Some("20") => Channel::_20,
+        Some("21") => Channel::_21,
+        Some("22") => Channel::_22,
+        Some("23") => Channel::_23,
+        Some("24") => Channel::_24,
+        Some("25") => Channel::_25,
+        Some("26") => Channel::_26,
+        _ => Channel::_26,
+    }; // Change channel, so we do not have interference with other networks by default
 
     static CSMA_TASK: StaticCell<CsmaStack<Radio>> = StaticCell::new();
     let task: &'static _ = CSMA_TASK.init(CsmaStack::new(radio, csma_config));
