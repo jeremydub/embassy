@@ -147,16 +147,16 @@ async fn main(spawner: Spawner) {
 
     loop {
         // If we are not 1 -> send UDP packet to 1
-        let send_to = option_env!("SEND_TO")
-            .and_then(|addr| Ipv6Address::from_str(addr).ok())
-            .unwrap_or(Ipv6Address::new(0xfd0e, 0, 0, 0, 0, 0, 0, 1));
+        let send_to = option_env!("SEND_TO").and_then(|addr| Ipv6Address::from_str(addr).ok());
         defmt::info!("Sending something to {}", send_to);
 
-        let ep = IpEndpoint::new(send_to.into(), 9400);
-        socket
-            .send_to(b"Hey, how are you? Can you ping this back to me? Please?", ep)
-            .await
-            .unwrap();
+        if let Some(send_to) = send_to {
+            let ep = IpEndpoint::new(send_to.into(), 9400);
+            socket
+                .send_to(b"Hey, how are you? Can you ping this back to me? Please?", ep)
+                .await
+                .unwrap();
+        }
 
         select(
             async {
