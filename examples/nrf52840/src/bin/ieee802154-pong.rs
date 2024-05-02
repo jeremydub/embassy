@@ -119,11 +119,11 @@ async fn main(spawner: Spawner) {
                         // Send a respons if it was a broadcast message
                         if let Some(addr) = frame.addressing() {
                             if addr
-                                .dst_address(&frame.frame_control())
+                                .dst_address()
                                 .map(|dst_addr| dst_addr.is_broadcast())
                                 .unwrap_or(false)
                             {
-                                if let Some(src_addr) = addr.src_address(&frame.frame_control()) {
+                                if let Some(src_addr) = addr.src_address() {
                                     let frame_repr = FrameBuilder::new_data(b"Hi, how are you :)")
                                         .set_dst_address(src_addr)
                                         .set_src_address(Address::Extended(hardware_addr))
