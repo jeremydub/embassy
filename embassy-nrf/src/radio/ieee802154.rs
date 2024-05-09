@@ -750,7 +750,7 @@ impl<T: AsRef<[u8]>> NrfFrame<T> {
         if self.len() < 3 {
             None
         } else {
-            Some(self.buffer.as_ref()[1 /* PHY_HDR */ + self.len() as usize /* data */])
+            Some(self.buffer.as_ref()[1 /* PHY_HDR */ + self.len() as usize /* data */].saturating_mul(4))
         }
     }
 }
