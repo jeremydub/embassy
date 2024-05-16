@@ -569,13 +569,13 @@ impl<'d, T: Instance> embassy_ieee802154::radio::Radio for Radio<'d, T> {
         core::future::poll_fn(|cx| {
             s.event_waker.register(cx.waker());
 
-            if r.events_phyend.read().events_phyend().bit_is_set() {
+            if r.events_ccabusy.read().events_ccabusy().bit_is_set() {
+                r.events_ccabusy.reset();
+                return Poll::Ready(false); // CCA failed
+            } else if r.events_phyend.read().events_phyend().bit_is_set() {
                 r.events_phyend.reset();
                 r.events_ccabusy.reset();
                 return Poll::Ready(true); // Success
-            } else if r.events_ccabusy.read().events_ccabusy().bit_is_set() {
-                r.events_ccabusy.reset();
-                return Poll::Ready(false); // CCA failed
             }
 
             r.intenset.write(|w| w.phyend().set().ccabusy().set());
