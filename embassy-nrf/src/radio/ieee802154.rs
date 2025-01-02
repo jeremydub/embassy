@@ -601,14 +601,14 @@ impl<'d, T: Instance> embassy_ieee802154::radio::Radio for Radio<'d, T> {
         let id1 = ficr.deviceid(0).read(); // FIXME: Should this be modified to DEVICEADDR (only 48bit)
         let id2 = ficr.deviceid(1).read();
         [
-            ((id1 & 0xf000u32) >> 24u32) as u8,
-            ((id1 & 0x0f00u32) >> 16u32) as u8,
-            ((id1 & 0x00f0u32) >> 8u32) as u8,
-            ((id1 & 0x000fu32) >> 0u32) as u8,
-            ((id2 & 0xf000u32) >> 24u32) as u8,
-            ((id2 & 0x0f00u32) >> 16u32) as u8,
-            ((id2 & 0x00f0u32) >> 8u32) as u8,
-            ((id2 & 0x000fu32) >> 0u32) as u8,
+            ((id1 & 0xff000000u32) >> 24u32) as u8,
+            ((id1 & 0x00ff0000u32) >> 16u32) as u8,
+            ((id1 & 0x0000ff00u32) >> 8u32) as u8,
+            ((id1 & 0x000000ffu32) >> 0u32) as u8,
+            ((id2 & 0xff000000u32) >> 24u32) as u8,
+            ((id2 & 0x00ff0000u32) >> 16u32) as u8,
+            ((id2 & 0x0000ff00u32) >> 8u32) as u8,
+            ((id2 & 0x000000ffu32) >> 0u32) as u8,
         ]
     }
 }
