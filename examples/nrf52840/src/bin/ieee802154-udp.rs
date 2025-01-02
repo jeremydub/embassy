@@ -4,6 +4,7 @@
 use embassy_net::udp::PacketMetadata;
 use embassy_net::IpAddress;
 use embassy_net::IpEndpoint;
+use embassy_net::Runner;
 use embassy_time::Duration;
 use embassy_time::Timer;
 use heapless::Vec;
@@ -24,7 +25,7 @@ use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
 use embassy_net::udp::UdpSocket;
-use embassy_net::{Ipv6Address, Ipv6Cidr, Stack, StackResources};
+use embassy_net::{Ipv6Address, Ipv6Cidr, StackResources};
 
 type Radio = embassy_nrf::radio::ieee802154::Radio<'static, RADIO>;
 
@@ -65,17 +66,11 @@ async fn main(spawner: Spawner) {
 
     // Init network stack
     let seed: u64 = 10; // XXX this should be csprng
-    static STACK_CONTAINER: StaticCell<Stack<Ieee802154Driver<'static, Radio>>> = StaticCell::new();
     static STACK_RESOURCES: StaticCell<StackResources<2>> = StaticCell::new();
-    let stack = STACK_CONTAINER.init(Stack::new(
-        device,
-        config,
-        STACK_RESOURCES.init(StackResources::<2>::new()),
-        seed,
-    ));
+    let (stack, runner) = embassy_net::new(device, config, STACK_RESOURCES.init(StackResources::<2>::new()), seed);
 
     // Launch network task
-    unwrap!(spawner.spawn(net_task(stack)));
+    unwrap!(spawner.spawn(net_task(runner)));
 
     info!("Network task initialized");
 
@@ -121,6 +116,6 @@ async fn ieee802154_task(csma: &'static CsmaStack<Radio>, p_rng: RNG) -> ! {
 }
 
 #[embassy_executor::task]
-async fn net_task(stack: &'static Stack<Ieee802154Driver<'static, Radio>>) -> ! {
+async fn net_task(mut stack: Runner<'static, Ieee802154Driver<'static, Radio>>) -> ! {
     stack.run().await
 }
