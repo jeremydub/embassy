@@ -265,8 +265,8 @@ impl<'d, T: Instance> Radio<'d, T> {
     /// Moves the radio to the TXIDLE state
     fn transmit_prepare(&mut self) {
         // clear related events
-        T::regs().events_ccabusy.reset();
-        T::regs().events_phyend.reset();
+        T::regs().events_ccabusy().write_value(0);
+        T::regs().events_phyend().write_value(0);
         // NOTE to avoid errata 204 (see rev1 v1.4) we do TX_IDLE -> DISABLED -> RX_IDLE
         let disable = match self.state() {
             RadioState::DISABLED => false,
@@ -482,11 +482,12 @@ impl<'d, T: Instance> embassy_ieee802154::radio::Radio for Radio<'d, T> {
         core::future::poll_fn(|cx| {
             s.event_waker.register(cx.waker());
 
-            if r.events_phyend.read().events_phyend().bit_is_set() {
-                r.events_phyend.reset();
+            if r.events_phyend().read() != 0 {
+                r.events_phyend().write_value(0);
+                trace!("RX done poll");
                 return Poll::Ready(());
             } else {
-                r.intenset.write(|w| w.phyend().set());
+                r.intenset().write(|w| w.set_phyend(true));
             };
 
             Poll::Pending
@@ -498,7 +499,7 @@ impl<'d, T: Instance> embassy_ieee802154::radio::Radio for Radio<'d, T> {
         // let crc = r.rxcrc.read().rxcrc().bits() as u16;
 
         // True if successful
-        r.crcstatus.read().crcstatus().bit_is_set()
+        r.crcstatus().read().crcstatus() == vals::Crcstatus::CRCOK
     }
 
     async unsafe fn prepare_transmit(&mut self, cfg: &TxConfig, bytes: &mut [u8]) {
@@ -519,21 +520,18 @@ impl<'d, T: Instance> embassy_ieee802154::radio::Radio for Radio<'d, T> {
             // CCA idle → enable TX → start TX → TX → end (PHYEND) → disabled
             //
             // CCA might end up in the event CCABUSY in which there will be no transmission
-            r.shorts.write(|w| {
-                w.rxready_ccastart()
-                    .enabled()
-                    .ccaidle_txen()
-                    .enabled()
-                    .txready_start()
-                    .enabled()
-                    .ccabusy_disable()
-                    .enabled()
-                    .phyend_disable()
-                    .enabled()
+            r.shorts().write(|w| {
+                w.set_rxready_ccastart(true);
+                w.set_ccaidle_txen(true);
+                w.set_txready_start(true);
+                w.set_ccabusy_disable(true);
+                w.set_phyend_disable(true);
             });
         } else {
-            r.shorts
-                .write(|w| w.txready_start().enabled().phyend_disable().enabled());
+            r.shorts().write(|w| {
+                w.set_txready_start(true);
+                w.set_phyend_disable(true)
+            });
         }
 
         // Set transmission buffer
@@ -546,13 +544,13 @@ impl<'d, T: Instance> embassy_ieee802154::radio::Radio for Radio<'d, T> {
 
         match (self.state(), cfg.cca) {
             // Re-start receiver (CCA)
-            (RadioState::RX_IDLE, true) => r.tasks_ccastart.write(|w| w.tasks_ccastart().set_bit()),
+            (RadioState::RX_IDLE, true) => r.tasks_ccastart().write_value(1),
             // Enable receiver (CCA)
-            (_, true) => r.tasks_rxen.write(|w| w.tasks_rxen().set_bit()),
+            (_, true) => r.tasks_rxen().write_value(1),
             // Re-start transmitter (CCA)
-            (RadioState::TX_IDLE, false) => r.tasks_start.write(|w| w.tasks_start().set_bit()),
+            (RadioState::TX_IDLE, false) => r.tasks_start().write_value(1),
             // Enable transmitter (CCA)
-            (_, false) => r.tasks_txen.write(|w| w.tasks_txen().set_bit()),
+            (_, false) => r.tasks_txen().write_value(1),
         }
     }
 
@@ -564,16 +562,19 @@ impl<'d, T: Instance> embassy_ieee802154::radio::Radio for Radio<'d, T> {
         core::future::poll_fn(|cx| {
             s.event_waker.register(cx.waker());
 
-            if r.events_phyend.read().events_phyend().bit_is_set() {
-                r.events_phyend.reset();
-                r.events_ccabusy.reset();
+            if r.events_phyend().read() == 1 {
+                r.events_phyend().write_value(0);
+                r.events_ccabusy().write_value(0);
                 return Poll::Ready(true); // Success
-            } else if r.events_ccabusy.read().events_ccabusy().bit_is_set() {
-                r.events_ccabusy.reset();
+            } else if r.events_ccabusy().read() == 1 {
+                r.events_ccabusy().write_value(0);
                 return Poll::Ready(false); // CCA failed
             }
 
-            r.intenset.write(|w| w.phyend().set().ccabusy().set());
+            r.intenset().write(|w| {
+                w.set_phyend(true);
+                w.set_ccabusy(true);
+            });
 
             Poll::Pending
         })
@@ -589,15 +590,16 @@ impl<'d, T: Instance> embassy_ieee802154::radio::Radio for Radio<'d, T> {
             | RadioState::TX_IDLE => (),
             RadioState::TX | RadioState::TX_RU | RadioState::RX | RadioState::RX_RU => {
                 let radio = T::regs();
-                radio.tasks_stop.write(|w| w.tasks_stop().set_bit())
+                radio.tasks_stop().write_value(1);
             }
+            _ => {}
         }
     }
 
     fn ieee802154_address(&self) -> [u8; 8] {
-        let ficr = unsafe { crate::pac::Peripherals::steal().FICR };
-        let [id1, id2] = &ficr.deviceid; // FIXME: Should this be modified to DEVICEADDR (only 48bit)
-        let [id1, id2] = [id1.read().bits(), id2.read().bits()];
+        let ficr = crate::pac::FICR;
+        let id1 = ficr.deviceid(0).read(); // FIXME: Should this be modified to DEVICEADDR (only 48bit)
+        let id2 = ficr.deviceid(1).read();
         [
             ((id1 & 0xf000u32) >> 24u32) as u8,
             ((id1 & 0x0f00u32) >> 16u32) as u8,

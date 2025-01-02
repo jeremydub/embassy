@@ -5,7 +5,7 @@ use core::cell::RefCell;
 use core::future::poll_fn;
 use core::task::Poll;
 
-use defmt::unwrap;
+use defmt::{info, unwrap};
 use embassy_executor::Spawner;
 use embassy_futures::select;
 use embassy_ieee802154::csma::{CsmaConfig, CsmaStack};
@@ -41,6 +41,7 @@ async fn main(spawner: Spawner) {
     let radio = embassy_nrf::radio::ieee802154::Radio::new(p.RADIO, Irqs);
     // and request the address given by the manufacturer
     let hardware_addr = radio.ieee802154_address();
+    info!("Using LL address: {:?}", hardware_addr);
 
     // We setup CSMA
     let csma_config = CsmaConfig::default();
@@ -76,7 +77,7 @@ async fn main(spawner: Spawner) {
                 poll_fn(|cx| match device.borrow_mut().transmit(cx) {
                     Some(tx_token) => {
                         tx_token.consume(frame_repr.buffer_len(), |buf| {
-                            defmt::debug!("New buffer being sent: {}", buf);
+                            defmt::debug!("New buffer being sent");
                             let mut frame = Frame::new_unchecked(buf);
                             frame_repr.emit(&mut frame);
                         });
