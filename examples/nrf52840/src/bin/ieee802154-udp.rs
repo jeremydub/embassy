@@ -13,9 +13,7 @@ use defmt::info;
 
 use defmt::unwrap;
 use embassy_executor::Spawner;
-use embassy_ieee802154::csma::{CsmaConfig, CsmaStack};
-use embassy_ieee802154::driver::Ieee802154Driver;
-use embassy_ieee802154::radio::Radio as _;
+use embassy_ieee802154::{driver::Ieee802154Driver, radio::Radio as _, stack::RadioStack};
 use embassy_nrf::{
     bind_interrupts,
     peripherals::{RADIO, RNG},
@@ -25,7 +23,7 @@ use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
 use embassy_net::udp::UdpSocket;
-use embassy_net::{Ipv6Address, Ipv6Cidr, StackResources};
+use embassy_net::{Ipv6Address, Ipv6Cidr};
 
 type Radio = embassy_nrf::radio::ieee802154::Radio<'static, RADIO>;
 
@@ -47,15 +45,14 @@ async fn main(spawner: Spawner) {
     // and request the address given by the manufacturer
     let _hardware_addr = radio.ieee802154_address();
 
-    // We setup CSMA
-    let csma_config = CsmaConfig::default();
-    static CSMA_TASK: StaticCell<CsmaStack<Radio>> = StaticCell::new();
-    let task: &'static _ = CSMA_TASK.init(CsmaStack::new(radio, csma_config));
-    // Ask a driver, such that we can control the csma task, by requesting to transmit/receive frames
-    let device: Ieee802154Driver<'static, _> = task.driver();
+    // We setup radio stack
+    static RADIO_STACK: StaticCell<RadioStack<Radio>> = StaticCell::new();
+    let radio_stack: &'static _ = RADIO_STACK.init(RadioStack::new(radio));
+    // Ask a driver, such that we can control the radio task, by requesting to transmit/receive frames
+    let driver: Ieee802154Driver<'static, _> = radio_stack.driver();
 
     // We spawn the task that will control the CSMA task
-    unwrap!(spawner.spawn(ieee802154_task(task, p.RNG)));
+    unwrap!(spawner.spawn(ieee802154_task(radio_stack, p.RNG)));
 
     let addr = option_env!("ADDRESS").unwrap_or("1").parse().unwrap();
     let config = embassy_net::Config::ipv6_static(embassy_net::StaticConfigV6 {
@@ -66,8 +63,13 @@ async fn main(spawner: Spawner) {
 
     // Init network stack
     let seed: u64 = 10; // XXX this should be csprng
-    static STACK_RESOURCES: StaticCell<StackResources<2>> = StaticCell::new();
-    let (stack, runner) = embassy_net::new(device, config, STACK_RESOURCES.init(StackResources::<2>::new()), seed);
+    static NET_STACK_RESOURCES: StaticCell<embassy_net::StackResources<2>> = StaticCell::new();
+    let (stack, runner) = embassy_net::new(
+        driver,
+        config,
+        NET_STACK_RESOURCES.init(embassy_net::StackResources::<2>::new()),
+        seed,
+    );
 
     // Launch network task
     unwrap!(spawner.spawn(net_task(runner)));
@@ -90,29 +92,34 @@ async fn main(spawner: Spawner) {
             let (n, ep) = socket.recv_from(&mut buf).await.unwrap();
             if let Ok(s) = core::str::from_utf8(&buf[..n]) {
                 info!("ECHO (to {}): {}", ep, s);
+                info!("Received Text : {}", s);
             } else {
-                info!("ECHO (to {}): bytearray len {}", ep, n);
+                info!("Received bytearray of len {}", n);
             }
             socket.send_to(&buf[..n], ep).await.unwrap();
         } else {
             // If we are not 1 -> send UDP packet to 1
             let ep = IpEndpoint::new(IpAddress::v6(0xfd0e, 0, 0, 0, 0, 0, 0, 1), 9400);
-            socket
-                .send_to(b"Hey, how are you? Can you ping this back to me? Please?", ep)
-                .await
-                .unwrap();
+            // info!("Sending message");
+            socket.send_to(b"Hello, World !", ep).await.unwrap();
+            let (n, _ep) = socket.recv_from(&mut buf).await.unwrap();
+            if let Ok(s) = core::str::from_utf8(&buf[..n]) {
+                info!("Received Text Response : {}", s);
+            } else {
+                info!("Received bytearray Response of len {}", n);
+            }
 
-            Timer::after(Duration::from_secs(1)).await;
+            Timer::after(Duration::from_millis(500)).await;
         }
     }
 }
 
-/// Run CSMA in the background
+/// Run Radio stack in the background
 #[embassy_executor::task]
-async fn ieee802154_task(csma: &'static CsmaStack<Radio>, p_rng: RNG) -> ! {
+async fn ieee802154_task(radio_stack: &'static RadioStack<Radio>, p_rng: RNG) -> ! {
     let rng = embassy_nrf::rng::Rng::new(p_rng, Irqs);
     let timer = embassy_time::Delay;
-    csma.run(rng, timer).await
+    radio_stack.run(rng, timer).await
 }
 
 #[embassy_executor::task]
