@@ -6,6 +6,7 @@ use embassy_net::IpAddress;
 use embassy_net::IpEndpoint;
 use embassy_net::Runner;
 use embassy_time::Duration;
+use embassy_time::Instant;
 use embassy_time::Timer;
 use heapless::Vec;
 
@@ -86,30 +87,30 @@ async fn main(spawner: Spawner) {
     let mut socket = UdpSocket::new(stack, &mut rx_meta, &mut rx_buffer, &mut tx_meta, &mut tx_buffer);
     socket.bind(9400).unwrap();
 
-    loop {
-        // If we are 1 -> echo result back
-        if addr == 1 {
-            let (n, ep) = socket.recv_from(&mut buf).await.unwrap();
-            if let Ok(s) = core::str::from_utf8(&buf[..n]) {
-                info!("Received Text : {}", s);
-            } else {
-                info!("Received bytearray of len {}", n);
-            }
-            info!("Echoing back message \"Hello, World !\"");
-            socket.send_to(&buf[..n], ep).await.unwrap();
-        } else {
-            // If we are not 1 -> send UDP packet to 1
-            let ep = IpEndpoint::new(IpAddress::v6(0xfd0e, 0, 0, 0, 0, 0, 0, 1), 9400);
-            info!("Sending message \"Hello, World !\"");
-            socket.send_to(b"Hello, World !", ep).await.unwrap();
-            let (n, _ep) = socket.recv_from(&mut buf).await.unwrap();
-            if let Ok(s) = core::str::from_utf8(&buf[..n]) {
-                info!("Received Text Response : {}", s);
-            } else {
-                info!("Received bytearray Response of len {}", n);
-            }
+    let mut tx_count = 0;
+    let mut rx_count = 0;
 
-            Timer::after(Duration::from_millis(500)).await;
+    let timestamp = Instant::now();
+
+    loop {
+        // If we are 1 -> Wait for datagram
+        if addr == 1 {
+            let (_n, _ep) = socket.recv_from(&mut buf).await.unwrap();
+            rx_count += 1;
+            if rx_count % 100 == 0 {
+                info!("Received {} packets", rx_count);
+            }
+        } else {
+            // If we are not 1 -> Send datagram every 10 ms
+            let ep = IpEndpoint::new(IpAddress::v6(0xfd0e, 0, 0, 0, 0, 0, 0, 1), 9400);
+            // info!("Sending message");
+            socket.send_to(b"Hello, World !", ep).await.unwrap();
+            tx_count += 1;
+            if tx_count % 100 == 0 {
+                info!("Sent {} packets", tx_count);
+            }
+            // Schedule next transmission in 10ms (synchronized with transmission of first packet)
+            Timer::at(timestamp + Duration::from_millis((tx_count + 1) * 10)).await;
         }
     }
 }
