@@ -11,8 +11,8 @@ repository = "https://github.com/embassy-rs/embassy"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-dot15d4 = { git = "https://github.com/SamClercky/dot15d4.git", branch = "csma-ca-fixes", default-features = false }
-# dot15d4 = { path = "../../dot15d4/dot15d4", default-features = false }
+dot15d4 = { git = "https://github.com/jeremydub/dot15d4.git", branch = "tsch-milestone1", default-features = false }
+# dot15d4 = { path = "../../dot15d4-management-v2/dot15d4", default-features = false }
 defmt = { version = "0.3", optional = true }
 embassy-sync = { path = "../embassy-sync" }
 embassy-net-driver = { path = "../embassy-net-driver" }
