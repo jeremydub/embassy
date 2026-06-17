@@ -106,7 +106,7 @@ igmp = ["smoltcp/proto-igmp"]
 defmt = { version = "0.3", optional = true }
 log = { version = "0.4.14", optional = true }
 
-smoltcp = { path = "../../smoltcp", version = "0.11.0", default-features = false, features = [
+smoltcp = { git = "https://github.com/thvdveld/smoltcp.git", branch="rpl", version = "0.11.0", default-features = false, features = [
   "socket",
   "async",
 ] }
